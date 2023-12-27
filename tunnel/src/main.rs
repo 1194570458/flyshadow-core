@@ -1,86 +1,46 @@
 use std::cell::RefCell;
+use std::io::Error;
 use std::string::ToString;
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::spawn;
+use tokio::sync::mpsc::channel;
 use tokio::time::sleep;
 
 use tunnel::context::context::TunnelContext;
+use tunnel::proxy::proxy::Proxy;
 use tunnel::tunnel::tunnel::Tunnel;
+use tunnel::tunnel::tunnel_package::TunnelPackage;
 
 #[tokio::main]
 async fn main() {
-    let mut tunnel = Tunnel::new("47.242.6.116".to_string(), 6001, "855ddy1sg2nczhxh4vgl".to_string());
-
-    let mut receiver = tunnel.close_receiver();
-    let mut tunnel_package_receiver = tunnel.tunnel_package_receiver().unwrap();
-
-    spawn(async move {
-        while let Some(tunnelPackage) = tunnel_package_receiver.recv().await {
-            println!("tunnel package: {:?}", tunnelPackage);
-        }
-    });
-
-    spawn(async move {
-        let _ = tunnel.connect().await;
-        println!("tunnel connect finish")
-    });
-
-
-    spawn(async move {
-        let r = receiver.recv().await;
-        println!("close, {:?}", r);
-    });
-
-
     // run_tunnel().await;
 
-    let tunnel_context = Arc::new(RefCell::new(Box::new(TunnelContext::new())));
+    let tunnel_context = Arc::new(TunnelContext::new());
 
-    let binding = tunnel_context.clone();
-    let mut arc = binding.as_ref().borrow_mut();
+    let mut proxy = Proxy::new(tunnel_context.clone(), 6555);
+    match proxy.start().await {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("{}", e);
+        }
+    };
 
-    arc.tunnel = Some(tunnel);
-
-    // let mut proxy = Proxy::new(tunnel_context.clone(), 6445);
-    // match proxy.start().await {
-    //     Ok(_) => {
-    //         eprintln!("start proxy")
-    //     }
-    //     Err(e) => { eprintln!("start proxy err : {}", e) }
-    // }
-
-
-    // sleep(Duration::from_secs(20)).await;
-
-    // proxy.stop_listener();
+    match tunnel_context.connect_tunnel("127.0.0.1".to_string(), 6000, "855ddy1sg2nczhxh4vgl".to_string()).await {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("{}", e);
+        }
+    };
 
     sleep(Duration::from_secs(2000)).await;
 }
 
 async fn run_tunnel() {
-    let mut tunnel = Tunnel::new("47.242.6.116".to_string(), 6001, "855ddy1sg2nczhxh4vgl".to_string());
+    let (r, w) = channel::<TunnelPackage>(1024);
+    let mut tunnel = Tunnel::new("47.242.6.116".to_string(), 6001, "855ddy1sg2nczhxh4vgl".to_string(), r).await;
 
-    let mut receiver = tunnel.close_receiver();
-    let mut tunnel_package_receiver = tunnel.tunnel_package_receiver().unwrap();
-
-    spawn(async move {
-        while let Some(tunnelPackage) = tunnel_package_receiver.recv().await {
-            println!("tunnel package: {:?}", tunnelPackage);
-        }
-    });
-
-    spawn(async move {
-        let _ = tunnel.connect().await;
-        println!("tunnel connect finish")
-    });
-
-
-    spawn(async move {
-        let r = receiver.recv().await;
-        println!("close, {:?}", r);
-    });
 
     sleep(Duration::from_secs(2000)).await;
 }

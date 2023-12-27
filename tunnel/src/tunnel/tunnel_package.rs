@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 /// 隧道数据包
 #[derive(Debug)]
-pub struct TunnelPackage<> {
+pub struct TunnelPackage {
     pub cmd: PackageCmd,
     pub protocol: PackageProtocol,
     pub source_address: Option<String>,
@@ -110,7 +110,7 @@ impl TunnelPackage {
                 vec.push(0u8);
             }
             Some(addr) => {
-                vec.append(&mut (addr.len() as u32).to_be_bytes().to_vec());
+                vec.append(&mut (addr.len() as u32).to_le_bytes().to_vec());
                 vec.append(&mut addr.as_bytes().to_vec());
             }
         }
@@ -124,7 +124,7 @@ impl TunnelPackage {
                 vec.push(0u8);
             }
             Some(addr) => {
-                vec.append(&mut (addr.len() as u32).to_be_bytes().to_vec());
+                vec.append(&mut (addr.len() as u32).to_le_bytes().to_vec());
                 vec.append(&mut addr.as_bytes().to_vec());
             }
         }
@@ -156,7 +156,7 @@ impl TunnelPackage {
         let cmd = PackageCmd::from_cmd(deque.pop_front().unwrap());
         let protocol = PackageProtocol::from_protocol(deque.pop_front().unwrap());
 
-        let source_address_len = u32::from_be_bytes([deque.pop_front().unwrap(), deque.pop_front().unwrap(), deque.pop_front().unwrap(), deque.pop_front().unwrap()]);
+        let source_address_len = u32::from_le_bytes([deque.pop_front().unwrap(), deque.pop_front().unwrap(), deque.pop_front().unwrap(), deque.pop_front().unwrap()]);
         let source_address = if source_address_len == 0 { None } else {
             let mut vec = Vec::new();
             for _ in 0..source_address_len {
@@ -164,7 +164,7 @@ impl TunnelPackage {
             }
             Some(String::from_utf8_lossy(&vec).to_string())
         };
-        let target_address_len = u32::from_be_bytes([deque.pop_front().unwrap(), deque.pop_front().unwrap(), deque.pop_front().unwrap(), deque.pop_front().unwrap()]);
+        let target_address_len = u32::from_le_bytes([deque.pop_front().unwrap(), deque.pop_front().unwrap(), deque.pop_front().unwrap(), deque.pop_front().unwrap()]);
         let target_address = if target_address_len == 0 { None } else {
             let mut vec = Vec::new();
             for _ in 0..target_address_len {
@@ -173,12 +173,14 @@ impl TunnelPackage {
             Some(String::from_utf8_lossy(&vec).to_string())
         };
 
+        let data_len = u32::from_le_bytes([deque.pop_front().unwrap(), deque.pop_front().unwrap(), deque.pop_front().unwrap(), deque.pop_front().unwrap()]);
+
         return TunnelPackage {
             cmd,
             protocol,
             source_address,
             target_address,
-            data: Some(deque.as_slices().0.to_vec()),
+            data: if data_len != 0 { Some(deque.as_slices().0.to_vec()) } else { None },
         };
     }
 }

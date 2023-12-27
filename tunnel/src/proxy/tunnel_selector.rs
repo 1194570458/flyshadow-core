@@ -1,7 +1,8 @@
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use regex::Regex;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
@@ -12,9 +13,9 @@ use crate::tunnel::tunnel_package::{PackageCmd, PackageProtocol, TunnelPackage};
 /// 可以选择直连http或者Socks或者隧道
 pub async fn select_and_connect(header_data: Vec<u8>,
                                 client_sender: Sender<Vec<u8>>,
-                                server_receiver: Receiver<Vec<u8>>,
+                                client_receiver: Receiver<Vec<u8>>,
                                 source_addr: String,
-                                context: Arc<Box<TunnelContext>>) -> Result<(), String> {
+                                context: Arc<TunnelContext>) -> Result<(), String> {
     if header_data.len() < 3 {
         return Err("error data len".to_string());
     }
@@ -39,7 +40,7 @@ pub async fn select_and_connect(header_data: Vec<u8>,
                 let host = captures.get(1).unwrap().as_str();
                 let port = captures.get(2).unwrap().as_str();
                 let _ = client_sender.send("HTTP/1.1 200 Connection Established\r\n\r\n".as_bytes().to_vec()).await;
-                proxy_connect(host, port, client_sender, server_receiver, None, source_addr, context).await
+                proxy_connect(host, port, client_sender, client_receiver, None, source_addr, context).await
             } else {
                 Err(format!("https header error :{}", header_line))
             }
@@ -54,7 +55,7 @@ pub async fn select_and_connect(header_data: Vec<u8>,
             let port = if let Some(p) = split1.next() {
                 p.split("/").next().unwrap()
             } else { "80" };
-            proxy_connect(host, port, client_sender, server_receiver, Some(header_data.clone()), source_addr, context).await
+            proxy_connect(host, port, client_sender, client_receiver, Some(header_data.clone()), source_addr, context).await
         };
     }
 
@@ -65,82 +66,70 @@ pub async fn select_and_connect(header_data: Vec<u8>,
 pub async fn proxy_connect(host: &str,
                            port: &str,
                            client_sender: Sender<Vec<u8>>,
-                           mut server_receiver: Receiver<Vec<u8>>,
+                           mut client_receiver: Receiver<Vec<u8>>,
                            mut header_data: Option<Vec<u8>>,
                            source_addr: String,
-                           context: Arc<Box<TunnelContext>>) -> Result<(), String> {
-    if context.tunnel.is_none() {
-        eprintln!("not tunnel active");
-        return Err("not tunnel active".to_string());
-    }
-
+                           context: Arc<TunnelContext>) -> Result<(), String> {
     let host = host.to_string();
     let port = port.to_string();
 
-    // 把发送者交给Context管理
-    let (sender_to_proxy, mut tunnel_receiver) = channel::<TunnelPackage>(4096);
-    context.proxy_map.write().await.insert(source_addr.to_string(), sender_to_proxy);
-
-    // 发送新建连接命令
-    if let Some(proxy_sender) = context.proxy_sender.clone() {
-        let _ = proxy_sender.send(TunnelPackage {
-            cmd: PackageCmd::NewConnect,
-            protocol: PackageProtocol::TCP,
-            source_address: Some(source_addr.to_string()),
-            target_address: Some(format!("{}:{}", host, port)),
-            data: None,
-        }).await;
-        // 发送传输数据命令
-        if let Some(header_data) = header_data.take() {
-            let _ = proxy_sender.send(TunnelPackage {
-                cmd: PackageCmd::TData,
-                protocol: PackageProtocol::TCP,
-                source_address: Some(source_addr.to_string()),
-                target_address: Some(format!("{}:{}", host, port)),
-                data: Some(header_data),
-            }).await;
-        }
-
-        // 读取Client数据
-        spawn(async move {
-            while let Some(data) = server_receiver.recv().await {
-                let _ = proxy_sender.send(TunnelPackage {
-                    cmd: PackageCmd::TData,
-                    protocol: PackageProtocol::TCP,
-                    source_address: Some(source_addr.to_string()),
-                    target_address: Some(format!("{}:{}", host, port)),
-                    data: Some(data),
-                }).await;
-            }
-        });
-
-        // 读取Tunnel数据
-        while let Some(package) = tunnel_receiver.recv().await {
-            match package.cmd {
-                PackageCmd::CloseConnect => { break; }
-                PackageCmd::TData => {
-                    if let Some(data) = package.data {
-                        let _ = client_sender.send(data).await;
-                    }
-                }
-                PackageCmd::PING => {}
-                PackageCmd::LoginSuccess => {}
-                PackageCmd::LoginFail => { break; }
-                PackageCmd::ProtocolError => { break; }
-                PackageCmd::PONG => {}
-                PackageCmd::NONE => {
-                    eprintln!("not active tunnel");
-                    return Err("not tunnel active".to_string());
-                }
-                _ => { break; }
-            }
-        }
-        return Ok(());
-    } else {
-        eprintln!("not active tunnel");
-        return Err("not tunnel active".to_string());
+    // 连接服务端
+    match context.tunnel_connect_server(format!("{}:{}", host, port), source_addr.to_string()).await {
+        Ok(_) => {}
+        Err(e) => { return Err(e) }
     }
 
+    // 添加映射
+    let (sender_to_proxy, mut tunnel_receiver) = channel::<TunnelPackage>(4096);
+    context.add_proxy_mapping(source_addr.to_string(), sender_to_proxy).await;
+
+    // 写请求头部数据
+    if let Some(data) = header_data.take() {
+        match context.tunnel_send_data(format!("{}:{}", host, port), source_addr.to_string(), data, PackageProtocol::TCP).await {
+            Ok(_) => {}
+            Err(e) => {return Err(e)}
+        }
+    }
+
+    // 循环读取Client数据
+    let context_clone = context.clone();
+    let source_addr_clone = source_addr.clone();
+    let target_addr = format!("{}:{}", host, port);
+    spawn(async move {
+        while let Some(data) = client_receiver.recv().await {
+            match context_clone.tunnel_send_data(target_addr.to_string(), source_addr_clone.to_string(), data, PackageProtocol::TCP).await {
+                Ok(_) => {}
+                Err(e) => {break}
+            }
+        }
+    });
+
+    // 读取Tunnel数据
+    while let Some(package) = tunnel_receiver.recv().await {
+        // eprintln!("receiver package {:?}",package);
+        match package.cmd {
+            PackageCmd::CloseConnect => { break; }
+            PackageCmd::TData => {
+                if let Some(data) = package.data {
+                    let _ = client_sender.send(data).await;
+                }
+            }
+            PackageCmd::PING => {}
+            PackageCmd::LoginSuccess => {}
+            PackageCmd::LoginFail => { break; }
+            PackageCmd::ProtocolError => { break; }
+            PackageCmd::PONG => {}
+            PackageCmd::NONE => {
+                eprintln!("not active tunnel");
+                return Err("not tunnel active".to_string());
+            }
+            _ => {  }
+        }
+    }
+
+    context.remove_proxy_mapping(source_addr.to_string()).await;
+    let _ = context.tunnel_close_server(format!("{}:{}", host, port), source_addr.to_string()).await;
+    return Ok(());
 
     // match TcpStream::connect(format!("{}:{}", host, port)).await {
     //     Ok(server_stream) => {

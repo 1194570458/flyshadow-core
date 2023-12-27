@@ -1,3 +1,3 @@
 pub mod tunnel;
 mod test_aes;
-pub(crate) mod tunnel_package;
+pub mod tunnel_package;

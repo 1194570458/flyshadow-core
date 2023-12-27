@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::io::Read;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -14,8 +15,6 @@ use crate::proxy::tunnel_selector;
 #[derive(PartialEq)]
 enum ConnectStatus {
     INIT,
-    SOCKS,
-    HTTP,
     CONNECTED,
 }
 
@@ -28,9 +27,7 @@ fn create_client_writer(mut writer: OwnedWriteHalf) -> Sender<Vec<u8>> {
             let slice_data = data.as_slice();
             match writer.write_all(slice_data).await {
                 Ok(_) => {}
-                Err(_) => {
-                    break;
-                }
+                Err(_) => { break; }
             }
         }
     });
@@ -39,7 +36,7 @@ fn create_client_writer(mut writer: OwnedWriteHalf) -> Sender<Vec<u8>> {
 }
 
 /// 处理客户端的连接
-pub async fn handler_client(mut tcp_stream: TcpStream, socket_addr: SocketAddr, context: Arc<Box<TunnelContext>>) {
+pub async fn handler_client(mut tcp_stream: TcpStream, socket_addr: SocketAddr, context: Arc<TunnelContext>) {
     eprintln!("handler client:{}", socket_addr);
     let mut status = ConnectStatus::INIT;
     let (mut client_reader, client_writer) = tcp_stream.into_split();
@@ -52,7 +49,7 @@ pub async fn handler_client(mut tcp_stream: TcpStream, socket_addr: SocketAddr, 
     loop {
         match client_reader.read(&mut buffer).await {
             Ok(0) => {
-                eprintln!("dis connect");
+                eprintln!("proxy client dis connect");
                 break;
             }
             Ok(n) => {
@@ -67,9 +64,9 @@ pub async fn handler_client(mut tcp_stream: TcpStream, socket_addr: SocketAddr, 
                     let context = context.clone();
                     spawn(async move {
                         // 连接服务端 返回服务端的发送者
-                        let _ = tunnel_selector::select_and_connect(vec, sender.clone(), server_receiver, format!("{}", socket_addr), context).await;
-                        // 连接服务端返回结果后发送一个0字节给客户端 让客户端断开
-                        let _ = sender.send([0].to_vec()).await;
+                        if let Err(e) = tunnel_selector::select_and_connect(vec, sender.clone(), server_receiver, format!("{}", socket_addr), context).await {
+                            eprintln!("proxy client err {}", e)
+                        }
                     });
                 } else {
                     if let Some(s) = server_sender.take() {
@@ -82,9 +79,11 @@ pub async fn handler_client(mut tcp_stream: TcpStream, socket_addr: SocketAddr, 
             }
             Err(e) => {
                 eprintln!("read {} Error: {:}", socket_addr, e);
+                break;
             }
         }
     }
 
-    eprintln!("loop end ");
+    context.remove_proxy_mapping(socket_addr.to_string()).await;
+    eprintln!("proxy client loop end ");
 }

@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::io::Error;
 use std::process::Output;
 use std::sync::Arc;
@@ -12,13 +13,13 @@ use crate::proxy::proxy_client;
 
 pub struct Proxy {
     port: usize,
-    context: Arc<Box<TunnelContext>>,
+    context: Arc<TunnelContext>,
     tcp_listener_join_handler: Option<JoinHandle<Output>>,
 }
 
 
 impl Proxy {
-    pub fn new(context: Arc<Box<TunnelContext>>, port: usize) -> Proxy {
+    pub fn new(context: Arc<TunnelContext>, port: usize) -> Proxy {
         Proxy {
             port,
             context,
@@ -31,16 +32,16 @@ impl Proxy {
         match TcpListener::bind(("0.0.0.0", self.port as u16)).await {
             Ok(lis) => {
                 eprintln!("Proxy start on {:}", self.port);
-                self.tcp_listener_join_handler = Some(Self::start_accept_client(lis, context));
+                self.start_accept_client(lis, context);
                 Ok(())
             }
             Err(e) => { Err(e) }
         }
     }
     /// 接收客户端的连接
-    fn start_accept_client(tcp_listener: TcpListener, context: Arc<Box<TunnelContext>>) -> JoinHandle<Output> {
+    fn start_accept_client(&mut self, tcp_listener: TcpListener, context: Arc<TunnelContext>) {
         let context = context.clone();
-        return spawn(async move {
+        let job_handler = spawn(async move {
             loop {
                 let context = context.clone();
                 match tcp_listener.accept().await {
@@ -56,10 +57,11 @@ impl Proxy {
                 }
             }
         });
+        self.tcp_listener_join_handler = Some(job_handler);
     }
 
     /// 停止监听
-    pub fn stop_listener(&mut self) {
+    pub fn stop(&mut self) {
         if let Some(job_handler) = self.tcp_listener_join_handler.take() {
             job_handler.abort();
             eprintln!("stop listener");
