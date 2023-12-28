@@ -12,7 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::spawn;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::RwLock;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
 
@@ -182,99 +182,75 @@ impl Tunnel {
 
         let reader_job = spawn(async move {
             let mut buffer_tmp: Vec<u8> = Vec::new();
-            let mut data = [0; 4096];
+            let mut data = [0; 8192];
 
-            loop {
+            'read_buff: loop {
                 match tcp_reader.read(&mut data).await {
                     Ok(0) => {
                         break;
                     }
                     Ok(n) => {
                         buffer_tmp.append(&mut data[..n].to_vec());
-
-                        // 校验数据头
-                        if buffer_tmp[0] != 0x0f && buffer_tmp[1] != 0x2f {
-                            break;
-                        }
-
-                        // 数据长度小于6
-                        if buffer_tmp.len() < 6 {
-                            continue;
-                        }
-
-                        let data_length = i32::from_be_bytes([buffer_tmp[2], buffer_tmp[3], buffer_tmp[4], buffer_tmp[5]]);
-                        if buffer_tmp.len() < data_length as usize {
-                            continue;
-                        }
-                        // eprintln!("read package:{:02x?}", buffer_tmp);
-
-                        let mut new_buffer = buffer_tmp.split_off((data_length + 6) as usize);
-                        let read_data_arr = &buffer_tmp.as_slice()[6..];
-
-                        // eprintln!("read decryptor:{:02x?}", read_data_arr);
-                        // 解密
-                        let mut final_result = Vec::<u8>::new();
-                        let mut read_buffer = buffer::RefReadBuffer::new(read_data_arr);
-                        let mut buffer = [0; 4096];
-                        let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
-
-                        {
-                            let mut decryptor = aes::ecb_decryptor(KeySize::KeySize256, password_md5.as_bytes(), PkcsPadding);
-                            loop {
-                                let result = decryptor.decrypt(&mut read_buffer, &mut write_buffer, true).unwrap();
-                                final_result.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
-                                match result {
-                                    BufferResult::BufferUnderflow => break,
-                                    BufferResult::BufferOverflow => {}
+                        'read_package: loop {
+                            match buffer_to_tunnel_package(&mut buffer_tmp, password_md5.as_bytes()) {
+                                Ok(tunnel_opt) => {
+                                    // 转成结构体
+                                    if let Some(mut tunnel_package) = tunnel_opt {
+                                        // eprintln!("tunnel read package: {:?}", tunnel_package);
+                                        match tunnel_package.cmd {
+                                            PackageCmd::Login => {}
+                                            PackageCmd::NewConnect => {}
+                                            PackageCmd::CloseConnect => {
+                                                if let Err(_) = sender.send(tunnel_package).await {
+                                                    break 'read_buff;
+                                                }
+                                            }
+                                            PackageCmd::TData => {
+                                                // if let Some(d) = tunnel_package.data.take() {
+                                                //     eprintln!("{}", String::from_utf8_lossy(d.clone().as_slice()));
+                                                //     tunnel_package.data = Some(d);
+                                                // }
+                                                if let Err(_) = sender.send(tunnel_package).await {
+                                                    break 'read_buff;
+                                                }
+                                            }
+                                            PackageCmd::PING => {}
+                                            PackageCmd::LoginSuccess => {
+                                                eprintln!("tunnel login success");
+                                                let mut write_guard = login_success.write().await;
+                                                *write_guard = TunnelLoginStatus::Success;
+                                            }
+                                            PackageCmd::LoginFail => {
+                                                eprintln!("tunnel login fail");
+                                                let mut write_guard = login_success.write().await;
+                                                *write_guard = TunnelLoginStatus::Fail;
+                                            }
+                                            PackageCmd::ProtocolError => {
+                                                eprintln!("tunnel protocol error");
+                                                let mut write_guard = login_success.write().await;
+                                                *write_guard = TunnelLoginStatus::Fail;
+                                            }
+                                            PackageCmd::PONG => {
+                                                let ping_time = *ping_time.read().await;
+                                                let delay = SystemTime::now()
+                                                    .duration_since(UNIX_EPOCH)
+                                                    .unwrap()
+                                                    .as_millis() - ping_time;
+                                                eprintln!("tunnel delay {}ms", delay);
+                                                *ping_delay.write().await = delay;
+                                            }
+                                            PackageCmd::NONE => {}
+                                        }
+                                    } else {
+                                        break 'read_package;
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("{}", e);
+                                    break 'read_package;
                                 }
                             }
                         }
-
-                        // 转成结构体
-                        let mut tunnel_package = TunnelPackage::from_byte_array(final_result.as_slice());
-                        // eprintln!("tunnel read package: {:?}", tunnel_package);
-                        match tunnel_package.cmd {
-                            PackageCmd::Login => {}
-                            PackageCmd::NewConnect => {}
-                            PackageCmd::CloseConnect => {
-                                if let Err(_) = sender.send(tunnel_package).await {
-                                    break;
-                                }
-                            }
-                            PackageCmd::TData => {
-                                if let Err(_) = sender.send(tunnel_package).await {
-                                    break;
-                                }
-                            }
-                            PackageCmd::PING => {}
-                            PackageCmd::LoginSuccess => {
-                                eprintln!("tunnel login success");
-                                let mut write_guard = login_success.write().await;
-                                *write_guard = TunnelLoginStatus::Success;
-                            }
-                            PackageCmd::LoginFail => {
-                                eprintln!("tunnel login fail");
-                                let mut write_guard = login_success.write().await;
-                                *write_guard = TunnelLoginStatus::Fail;
-                            }
-                            PackageCmd::ProtocolError => {
-                                eprintln!("tunnel protocol error");
-                                let mut write_guard = login_success.write().await;
-                                *write_guard = TunnelLoginStatus::Fail;
-                            }
-                            PackageCmd::PONG => {
-                                let ping_time = *ping_time.read().await;
-                                let delay = SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_millis() - ping_time;
-                                eprintln!("tunnel delay {}ms", delay);
-                                *ping_delay.write().await = delay;
-                            }
-                            PackageCmd::NONE => {}
-                        }
-                        buffer_tmp.clear();
-                        buffer_tmp.append(&mut new_buffer);
                     }
                     Err(e) => {
                         eprintln!("tunnel read err {}", e);
@@ -285,4 +261,51 @@ impl Tunnel {
         });
         self.reader_job = Some(reader_job);
     }
+}
+
+/// 数据包转TunnelPackage结构体
+fn buffer_to_tunnel_package(buffer_tmp: &mut Vec<u8>, password_md5_byte: &[u8]) -> Result<Option<TunnelPackage>, String> {
+    // 数据长度小于6
+    if buffer_tmp.len() < 6 {
+        return Ok(None);
+    }
+
+    // 校验数据头
+    if buffer_tmp[0] != 0x0f && buffer_tmp[1] != 0x2f {
+        return Err("数据包头错误".to_string());
+    }
+
+    let data_length = i32::from_be_bytes([buffer_tmp[2], buffer_tmp[3], buffer_tmp[4], buffer_tmp[5]]);
+    if buffer_tmp.len() < (data_length + 6) as usize {
+        return Ok(None);
+    }
+    // eprintln!("read package:{:02x?}", buffer_tmp);
+
+    let mut new_buffer = buffer_tmp.split_off((data_length + 6) as usize);
+    let read_data_arr = &buffer_tmp.as_slice()[6..];
+
+    // eprintln!("read decryptor:{:02x?}", read_data_arr);
+    // 解密
+    let mut final_result = Vec::<u8>::new();
+    let mut read_buffer = buffer::RefReadBuffer::new(read_data_arr);
+    let mut buffer = [0; 4096];
+    let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
+
+    {
+        let mut decryptor = aes::ecb_decryptor(KeySize::KeySize256, password_md5_byte, PkcsPadding);
+        loop {
+            let result = decryptor.decrypt(&mut read_buffer, &mut write_buffer, true).unwrap();
+            final_result.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
+            match result {
+                BufferResult::BufferUnderflow => break,
+                BufferResult::BufferOverflow => {}
+            }
+        }
+    }
+
+    // 转成结构体
+    let tunnel_package = TunnelPackage::from_byte_array(final_result.as_slice());
+    buffer_tmp.clear();
+    buffer_tmp.append(&mut new_buffer);
+    return Ok(Some(tunnel_package));
 }

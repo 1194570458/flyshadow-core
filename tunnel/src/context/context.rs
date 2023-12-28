@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::io::Error;
 use std::sync::Arc;
 
 use tokio::spawn;
@@ -7,7 +6,6 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-use crate::proxy::proxy::Proxy;
 use crate::tunnel::tunnel::Tunnel;
 use crate::tunnel::tunnel_package::{PackageCmd, PackageProtocol, TunnelPackage};
 
@@ -22,7 +20,7 @@ pub struct TunnelContext {
 impl TunnelContext {
     pub fn new() -> TunnelContext {
         // Tunnel往这里写  Context读取这里数据 写到对应Tunnel receiver
-        let (tunnel_sender, tunnel_receiver) = channel::<TunnelPackage>(4096);
+        let (tunnel_sender, tunnel_receiver) = channel::<TunnelPackage>(8192);
         let proxy_map = Arc::new(RwLock::new(HashMap::new()));
 
         let mut context = TunnelContext {
@@ -77,18 +75,17 @@ impl TunnelContext {
 
     /// 添加代理映射
     pub async fn add_proxy_mapping(&self, source_addr: String, sender: Sender<TunnelPackage>) {
-        eprintln!("add proxy mapping {}", source_addr);
         self.proxy_map.write().await.insert(source_addr, sender);
     }
 
     /// 删除代理映射
     pub async fn remove_proxy_mapping(&self, source_addr: String) {
-        eprintln!("remove proxy mapping {}", source_addr);
         self.proxy_map.write().await.remove(&source_addr);
     }
 
     /// 发送连接服务端命令
     pub async fn tunnel_connect_server(&self, target_addr: String, source_addr: String) -> Result<(), String> {
+        eprintln!("connect to: {}",target_addr);
         if self.tunnel_lock.read().await.is_none() {
             return Err("Tunnel is none".to_string());
         }
@@ -143,6 +140,7 @@ impl TunnelContext {
 
     /// 发送关闭服务端连接命令
     pub async fn tunnel_close_server(&self, target_addr: String, source_addr: String) -> Result<(), String> {
+        eprintln!("dis connect to: {}",target_addr);
         if self.tunnel_lock.read().await.is_none() {
             return Err("Tunnel is none".to_string());
         }

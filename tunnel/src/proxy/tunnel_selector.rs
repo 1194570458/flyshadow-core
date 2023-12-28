@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::sync::Arc;
 
 use regex::Regex;
@@ -80,7 +79,7 @@ pub async fn proxy_connect(host: &str,
     }
 
     // 添加映射
-    let (sender_to_proxy, mut tunnel_receiver) = channel::<TunnelPackage>(4096);
+    let (sender_to_proxy, mut tunnel_receiver) = channel::<TunnelPackage>(8192);
     context.add_proxy_mapping(source_addr.to_string(), sender_to_proxy).await;
 
     // 写请求头部数据

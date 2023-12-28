@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::io::Error;
 use std::process::Output;
 use std::sync::Arc;

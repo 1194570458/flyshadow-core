@@ -1,10 +1,6 @@
-use std::cell::RefCell;
-use std::io::Error;
 use std::string::ToString;
 use std::sync::Arc;
 use std::time::Duration;
-
-use tokio::spawn;
 use tokio::sync::mpsc::channel;
 use tokio::time::sleep;
 
@@ -17,6 +13,7 @@ use tunnel::tunnel::tunnel_package::TunnelPackage;
 async fn main() {
     // run_tunnel().await;
 
+
     let tunnel_context = Arc::new(TunnelContext::new());
 
     let mut proxy = Proxy::new(tunnel_context.clone(), 6555);
@@ -27,18 +24,18 @@ async fn main() {
         }
     };
 
-    match tunnel_context.connect_tunnel("127.0.0.1".to_string(), 6000, "855ddy1sg2nczhxh4vgl".to_string()).await {
+    match tunnel_context.connect_tunnel("47.242.6.116".to_string(), 6001, "855ddy1sg2nczhxh4vgl".to_string()).await {
         Ok(_) => {}
         Err(e) => {
             eprintln!("{}", e);
         }
     };
 
-    sleep(Duration::from_secs(2000)).await;
+    sleep(Duration::from_secs(20000)).await;
 }
 
 async fn run_tunnel() {
-    let (r, w) = channel::<TunnelPackage>(1024);
+    let (r, w) = channel::<TunnelPackage>(8192);
     let mut tunnel = Tunnel::new("47.242.6.116".to_string(), 6001, "855ddy1sg2nczhxh4vgl".to_string(), r).await;
 
 
