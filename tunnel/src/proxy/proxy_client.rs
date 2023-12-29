@@ -18,7 +18,7 @@ enum ConnectStatus {
 
 /// 创建客户端写数据线程
 fn create_client_writer(mut writer: OwnedWriteHalf) -> Sender<Vec<u8>> {
-    let (sender, mut receiver) = channel::<Vec<u8>>(50);
+    let (sender, mut receiver) = channel::<Vec<u8>>(10);
 
     spawn(async move {
         while let Some(data) = receiver.recv().await {
@@ -56,7 +56,7 @@ pub async fn handler_client(tcp_stream: TcpStream, socket_addr: SocketAddr, cont
                     status = ConnectStatus::CONNECTED;
                     let vec = data.to_vec();
                     let sender = client_sender.clone();
-                    let (server_sender1, server_receiver) = channel::<Vec<u8>>(50);
+                    let (server_sender1, server_receiver) = channel::<Vec<u8>>(10);
                     server_sender = Some(server_sender1);
                     let context = context.clone();
                     spawn(async move {

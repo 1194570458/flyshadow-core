@@ -1,15 +1,15 @@
 use std::io::Error;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use openssl::symm::{Cipher, decrypt, encrypt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
-use tokio::{spawn, task};
-use tokio::sync::RwLock;
+use tokio::spawn;
 use tokio::sync::mpsc::Sender;
-use tokio::task::{JoinHandle};
-use tokio::time::sleep;
+use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 
 use crate::tunnel::tunnel_package::{PackageCmd, PackageProtocol, TunnelPackage};
 
@@ -230,11 +230,12 @@ impl Tunnel {
         // eprintln!("tunnel write to tunnel:{:?}", tunnel_package);
         let pwd = self.password_md5.as_bytes();
         // 转成数组
-        let data = tunnel_package.to_byte_array();
+        let mut vec1 = Vec::new();
+        tunnel_package.to_byte_array(vec1.as_mut());
 
         // 加密
         let cipher = Cipher::aes_256_ecb();
-        let mut final_result = match encrypt(cipher, pwd, None, data) {
+        let mut final_result = match encrypt(cipher, pwd, None, vec1.as_slice()) {
             Ok(vec) => { vec }
             Err(e) => { return Err(e.to_string()); }
         };

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use regex::Regex;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::spawn;
@@ -68,7 +67,7 @@ pub async fn proxy_connect(host: &str,
     }
 
     // 添加映射
-    let (sender_to_proxy, mut tunnel_receiver) = channel::<TunnelPackage>(50);
+    let (sender_to_proxy, mut tunnel_receiver) = channel::<TunnelPackage>(10);
     context.add_proxy_mapping(source_addr.to_string(), sender_to_proxy).await;
 
     // 写请求头部数据

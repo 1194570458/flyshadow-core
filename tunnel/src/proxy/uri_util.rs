@@ -1,4 +1,3 @@
-use crate::proxy::uri_util;
 
 #[test]
 fn test() {

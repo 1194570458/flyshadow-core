@@ -42,7 +42,7 @@ impl TunnelContext {
 impl TunnelContext {
     pub fn new() -> TunnelContext {
         // Tunnel往这里写  Context读取这里数据 写到对应Tunnel receiver
-        let (tunnel_sender, tunnel_receiver) = channel::<TunnelPackage>(50);
+        let (tunnel_sender, tunnel_receiver) = channel::<TunnelPackage>(10);
         let proxy_map = Arc::new(RwLock::new(HashMap::new()));
 
         let mut context = TunnelContext {
