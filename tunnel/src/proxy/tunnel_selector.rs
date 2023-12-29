@@ -80,7 +80,7 @@ pub async fn proxy_connect(host: &str,
     }
 
     // 添加映射
-    let (sender_to_proxy, mut tunnel_receiver) = channel::<TunnelPackage>(8192);
+    let (sender_to_proxy, mut tunnel_receiver) = channel::<TunnelPackage>(50);
     context.add_proxy_mapping(source_addr.to_string(), sender_to_proxy).await;
 
     // 写请求头部数据
@@ -128,7 +128,7 @@ pub async fn proxy_connect(host: &str,
     }
 
     context.remove_proxy_mapping(source_addr.to_string()).await;
-    let _ = context.tunnel_close_server(format!("{}:{}", host, port), source_addr.to_string()).await;
+    let _ = context.tunnel_close_server(source_addr.to_string()).await;
     return Ok(());
 
     match TcpStream::connect(format!("{}:{}", host, port)).await {

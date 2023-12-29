@@ -20,7 +20,7 @@ enum ConnectStatus {
 
 /// 创建客户端写数据线程
 fn create_client_writer(mut writer: OwnedWriteHalf) -> Sender<Vec<u8>> {
-    let (sender, mut receiver) = channel::<Vec<u8>>(8192);
+    let (sender, mut receiver) = channel::<Vec<u8>>(50);
 
     spawn(async move {
         while let Some(data) = receiver.recv().await {
@@ -60,7 +60,7 @@ pub async fn handler_client(mut tcp_stream: TcpStream, socket_addr: SocketAddr, 
                     status = ConnectStatus::CONNECTED;
                     let vec = data.to_vec();
                     let sender = client_sender.clone();
-                    let (server_sender1, server_receiver) = channel::<Vec<u8>>(8192);
+                    let (server_sender1, server_receiver) = channel::<Vec<u8>>(50);
                     server_sender = Some(server_sender1);
                     let context = context.clone();
                     handler_read_data_job_handler = Some(spawn(async move {
@@ -85,10 +85,7 @@ pub async fn handler_client(mut tcp_stream: TcpStream, socket_addr: SocketAddr, 
         }
     }
 
-    if let Some(job) = handler_read_data_job_handler{
-        job.abort();
-    }
-
     context.remove_proxy_mapping(socket_addr.to_string()).await;
+    let _ = context.tunnel_close_server(socket_addr.to_string()).await;
     // eprintln!("proxy client loop end ");
 }

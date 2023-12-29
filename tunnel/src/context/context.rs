@@ -20,7 +20,7 @@ pub struct TunnelContext {
 impl TunnelContext {
     pub fn new() -> TunnelContext {
         // Tunnel往这里写  Context读取这里数据 写到对应Tunnel receiver
-        let (tunnel_sender, tunnel_receiver) = channel::<TunnelPackage>(8192);
+        let (tunnel_sender, tunnel_receiver) = channel::<TunnelPackage>(50);
         let proxy_map = Arc::new(RwLock::new(HashMap::new()));
 
         let mut context = TunnelContext {
@@ -139,8 +139,8 @@ impl TunnelContext {
     }
 
     /// 发送关闭服务端连接命令
-    pub async fn tunnel_close_server(&self, target_addr: String, source_addr: String) -> Result<(), String> {
-        eprintln!("dis connect to: {}",target_addr);
+    pub async fn tunnel_close_server(&self, source_addr: String) -> Result<(), String> {
+        eprintln!("dis connect ,source addr: {}",source_addr);
         if self.tunnel_lock.read().await.is_none() {
             return Err("Tunnel is none".to_string());
         }
@@ -151,7 +151,7 @@ impl TunnelContext {
                 cmd: PackageCmd::CloseConnect,
                 protocol: PackageProtocol::TCP,
                 source_address: Some(source_addr),
-                target_address: Some(target_addr),
+                target_address: None,
                 data: None,
             };
             let _ = tunnel.write_to_tunnel(tunnel_package).await;
