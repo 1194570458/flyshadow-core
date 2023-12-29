@@ -7,6 +7,7 @@ use tokio::spawn;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use crate::context::context::TunnelContext;
+use crate::proxy::uri_util::{HttpMethod, resolve_uri};
 use crate::tunnel::tunnel_package::{PackageCmd, PackageProtocol, TunnelPackage};
 
 /// 选择隧道和连接
@@ -31,32 +32,19 @@ pub async fn select_and_connect(header_data: Vec<u8>,
     }
     // http
     else {
-        let header_line = unsafe { String::from_utf8_unchecked(header_data.clone()) };
+        let (host, port, method) = resolve_uri(&header_data);
 
         // https
-        return if header_line.starts_with("CONNECT") {
-            if let Some(captures) = Regex::new("CONNECT (.+):(.+) HTTP/(1\\.[01])").unwrap().captures(&header_line)
-            {
-                let host = captures.get(1).unwrap().as_str();
-                let port = captures.get(2).unwrap().as_str();
-                let _ = client_sender.send("HTTP/1.1 200 Connection Established\r\n\r\n".as_bytes().to_vec()).await;
-                proxy_connect(host, port, client_sender, client_receiver, None, source_addr, context).await
-            } else {
-                Err(format!("https header error :{}", header_line))
-            }
+        return if method == HttpMethod::Connect {
+            let _ = client_sender.send("HTTP/1.1 200 Connection Established\r\n\r\n".as_bytes().to_vec()).await;
+            proxy_connect(&host, &port, client_sender, client_receiver, None, source_addr, context).await
         }
         // http
-        else {
-            let mut split = header_line.split("://");
-            split.next();
-            let addr = split.next().unwrap().split("\n").next().unwrap();
-            let mut split1 = addr.split(":");
-            let host = split1.next().unwrap().split("/").next().unwrap();
-            let port = if let Some(p) = split1.next() {
-                p.split("/").next().unwrap()
-            } else { "80" };
-            proxy_connect(host, port, client_sender, client_receiver, Some(header_data.clone()), source_addr, context).await
-        };
+        else if method == HttpMethod::Http {
+            proxy_connect(&host, &port, client_sender, client_receiver, Some(header_data.clone()), source_addr, context).await
+        }else {
+            Err(format!("Unknown uri :{}",String::from_utf8_lossy(&header_data)))
+        }
     }
 
     return Ok(());
@@ -76,7 +64,7 @@ pub async fn proxy_connect(host: &str,
     // 连接服务端
     match context.tunnel_connect_server(format!("{}:{}", host, port), source_addr.to_string()).await {
         Ok(_) => {}
-        Err(e) => { return Err(e) }
+        Err(e) => { return Err(e); }
     }
 
     // 添加映射
@@ -87,7 +75,7 @@ pub async fn proxy_connect(host: &str,
     if let Some(data) = header_data.take() {
         match context.tunnel_send_data(format!("{}:{}", host, port), source_addr.to_string(), data, PackageProtocol::TCP).await {
             Ok(_) => {}
-            Err(e) => {return Err(e)}
+            Err(e) => { return Err(e); }
         }
     }
 
@@ -99,7 +87,7 @@ pub async fn proxy_connect(host: &str,
         while let Some(data) = client_receiver.recv().await {
             match context_clone.tunnel_send_data(target_addr.to_string(), source_addr_clone.to_string(), data, PackageProtocol::TCP).await {
                 Ok(_) => {}
-                Err(_) => {break}
+                Err(_) => { break; }
             }
         }
     });
@@ -123,7 +111,7 @@ pub async fn proxy_connect(host: &str,
                 eprintln!("not active tunnel");
                 return Err("not tunnel active".to_string());
             }
-            _ => {  }
+            _ => {}
         }
     }
 
