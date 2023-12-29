@@ -1,20 +1,14 @@
 use std::io::Error;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-use crypto::{aes, buffer};
-use crypto::aes::KeySize;
-use crypto::blockmodes::PkcsPadding;
-use crypto::buffer::{BufferResult, ReadBuffer, WriteBuffer};
-use crypto::digest::Digest;
-use crypto::md5::Md5;
+use openssl::symm::{Cipher, decrypt, encrypt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
-use tokio::spawn;
+use tokio::{task};
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::Sender;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle};
 
 use crate::tunnel::tunnel_package::{PackageCmd, PackageProtocol, TunnelPackage};
 
@@ -47,15 +41,13 @@ impl Tunnel {
         match Tunnel::connect(host.to_string(), port).await {
             Ok((r, w)) => {
                 // // 加密解密密钥
-                let mut hasher = Md5::new();
-                hasher.input_str(password.as_str());
-                let md5_pwd = hasher.result_str();
+                let md5_pwd = md5::compute(password.as_bytes());
 
                 let mut tunnel = Tunnel {
                     host,
                     port,
                     password,
-                    password_md5: md5_pwd,
+                    password_md5: format!("{:x}",md5_pwd),
                     upload: Arc::new(RwLock::new(0)),
                     download: Arc::new(RwLock::new(0)),
                     login_status: Arc::new(RwLock::new(TunnelLoginStatus::WaitLogin)),
@@ -96,36 +88,23 @@ impl Tunnel {
         *write_guard = TunnelLoginStatus::Logout;
         // 停止读线程
         if let Some(reader_job) = self.reader_job.take() {
-            reader_job.abort()
+            reader_job.abort();
         }
     }
 
     /// 写数据包到Tunnel上
-    pub async fn write_to_tunnel(&mut self, mut tunnel_package: TunnelPackage) -> Result<(), Error> {
+    pub async fn write_to_tunnel(&mut self, mut tunnel_package: TunnelPackage) -> Result<(), String> {
         // eprintln!("tunnel write to tunnel:{:?}", tunnel_package);
         let pwd = self.password_md5.as_bytes();
         // 转成数组
         let data = tunnel_package.to_byte_array();
 
         // 加密
-        let mut final_result = Vec::<u8>::new();
-        let mut read_buffer = buffer::RefReadBuffer::new(data);
-        let mut buffer = [0; 4096];
-        let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
-
-        {
-            let mut encryptor = aes::ecb_encryptor(KeySize::KeySize256, pwd, PkcsPadding);
-            loop {
-                let result = encryptor.encrypt(&mut read_buffer, &mut write_buffer, true).unwrap();
-
-                final_result.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
-
-                match result {
-                    BufferResult::BufferUnderflow => break,
-                    BufferResult::BufferOverflow => {}
-                }
-            }
-        }
+        let cipher = Cipher::aes_256_ecb();
+        let mut final_result = match encrypt(cipher, pwd, None, data) {
+            Ok(vec) => {vec}
+            Err(e) => {return  Err(e.to_string())}
+        };
 
         let result_byte_arr = final_result.as_slice();
         let data_length = (result_byte_arr.len() as u32).to_le_bytes();
@@ -146,7 +125,7 @@ impl Tunnel {
             }
             Err(e) => {
                 eprintln!("tunnel write err {}", e);
-                Err(e)
+                Err(e.to_string())
             }
         }
     }
@@ -162,7 +141,7 @@ impl Tunnel {
 
     /// 登录tunnel
     async fn login_tunnel(&mut self) {
-        let package = TunnelPackage::new(PackageCmd::Login, PackageProtocol::TCP, None, None, Some(self.password_md5.clone().into_bytes()));
+        let package = TunnelPackage::new(PackageCmd::Login, PackageProtocol::TCP, None, None, Some(self.password_md5.clone().into()));
         let _ = self.write_to_tunnel(package).await;
     }
 
@@ -180,7 +159,7 @@ impl Tunnel {
         let ping_delay = self.ping_delay.clone();
         let ping_time = self.ping_time.clone();
 
-        let reader_job = spawn(async move {
+        let reader_job = task::spawn(async move {
             let mut buffer_tmp: Vec<u8> = Vec::new();
             let mut data = [0; 8192];
 
@@ -256,8 +235,8 @@ impl Tunnel {
                         eprintln!("tunnel read err {}", e);
                         break;
                     }
-                }
-            }
+                };
+            };
         });
         self.reader_job = Some(reader_job);
     }
@@ -279,33 +258,24 @@ fn buffer_to_tunnel_package(buffer_tmp: &mut Vec<u8>, password_md5_byte: &[u8]) 
     if buffer_tmp.len() < (data_length + 6) as usize {
         return Ok(None);
     }
-    // eprintln!("read package:{:02x?}", buffer_tmp);
 
     let mut new_buffer = buffer_tmp.split_off((data_length + 6) as usize);
     let read_data_arr = &buffer_tmp.as_slice()[6..];
 
-    // eprintln!("read decryptor:{:02x?}", read_data_arr);
     // 解密
-    let mut final_result = Vec::<u8>::new();
-    let mut read_buffer = buffer::RefReadBuffer::new(read_data_arr);
-    let mut buffer = [0; 4096];
-    let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
+    let cipher = Cipher::aes_256_ecb();
+    let result = match decrypt(cipher, password_md5_byte, None, read_data_arr) {
+        Ok(vec) => { vec }
+        Err(e) => { return Err(e.to_string()); }
+    };
 
-    {
-        let mut decryptor = aes::ecb_decryptor(KeySize::KeySize256, password_md5_byte, PkcsPadding);
-        loop {
-            let result = decryptor.decrypt(&mut read_buffer, &mut write_buffer, true).unwrap();
-            final_result.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
-            match result {
-                BufferResult::BufferUnderflow => break,
-                BufferResult::BufferOverflow => {}
-            }
-        }
-    }
 
     // 转成结构体
-    let tunnel_package = TunnelPackage::from_byte_array(final_result.as_slice());
+    let data = result.as_slice();
+    let tunnel_package = TunnelPackage::from_byte_array(data);
     buffer_tmp.clear();
     buffer_tmp.append(&mut new_buffer);
+
+
     return Ok(Some(tunnel_package));
 }
