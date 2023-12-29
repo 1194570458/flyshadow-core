@@ -21,9 +21,6 @@ pub enum TunnelLoginStatus {
 
 /// 隧道结构体
 pub struct Tunnel {
-    host: String,
-    port: u16,
-    password: String,
     password_md5: String,
     upload: Arc<RwLock<i64>>,
     download: Arc<RwLock<i64>>,
@@ -44,9 +41,6 @@ impl Tunnel {
                 let md5_pwd = md5::compute(password.as_bytes());
 
                 let mut tunnel = Tunnel {
-                    host,
-                    port,
-                    password,
                     password_md5: format!("{:x}",md5_pwd),
                     upload: Arc::new(RwLock::new(0)),
                     download: Arc::new(RwLock::new(0)),
@@ -147,7 +141,7 @@ impl Tunnel {
 
     /// 开始Tcp读取线程
     async fn start_reader_job(&mut self) {
-        let mut tcp_reader = self.tcp_reader.take();
+        let tcp_reader = self.tcp_reader.take();
         if tcp_reader.is_none() {
             return;
         }
@@ -158,6 +152,7 @@ impl Tunnel {
         let login_success = self.login_status.clone();
         let ping_delay = self.ping_delay.clone();
         let ping_time = self.ping_time.clone();
+        let download = self.download.clone();
 
         let reader_job = task::spawn(async move {
             let mut buffer_tmp: Vec<u8> = Vec::new();
@@ -169,12 +164,14 @@ impl Tunnel {
                         break;
                     }
                     Ok(n) => {
+                        let mut write_guard = download.write().await;
+                        *write_guard += n as i64;
                         buffer_tmp.append(&mut data[..n].to_vec());
                         'read_package: loop {
                             match buffer_to_tunnel_package(&mut buffer_tmp, password_md5.as_bytes()) {
                                 Ok(tunnel_opt) => {
                                     // 转成结构体
-                                    if let Some(mut tunnel_package) = tunnel_opt {
+                                    if let Some(tunnel_package) = tunnel_opt {
                                         // eprintln!("tunnel read package: {:?}", tunnel_package);
                                         match tunnel_package.cmd {
                                             PackageCmd::Login => {}

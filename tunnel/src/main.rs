@@ -20,7 +20,7 @@ async fn main() {
         }
     };
 
-    match tunnel_context.connect_tunnel("47.242.6.116".to_string(), 6001, "855ddy1sg2nczhxh4vgl".to_string()).await {
+    match tunnel_context.connect_tunnel("47.242.6.115".to_string(), 6001, "855ddy1sg2nczhxh4vgl".to_string()).await {
         Ok(_) => {}
         Err(e) => {
             eprintln!("{}", e);

@@ -61,9 +61,9 @@ impl TunnelContext {
                 // 读TunnelPackage
                 while let Some(tunnel_package) = tunnel_receiver.recv().await {
                     // 有源地址
-                    if let Some(ref sourceAddr) = tunnel_package.source_address {
+                    if let Some(ref source_addr) = tunnel_package.source_address {
                         // 取映射中的客户端
-                        if let Some(sender) = proxy_map.read().await.get(&sourceAddr.to_string()) {
+                        if let Some(sender) = proxy_map.read().await.get(&source_addr.to_string()) {
                             let _ = sender.send(tunnel_package).await;
                         }
                     }

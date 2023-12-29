@@ -99,7 +99,7 @@ pub async fn proxy_connect(host: &str,
         while let Some(data) = client_receiver.recv().await {
             match context_clone.tunnel_send_data(target_addr.to_string(), source_addr_clone.to_string(), data, PackageProtocol::TCP).await {
                 Ok(_) => {}
-                Err(e) => {break}
+                Err(_) => {break}
             }
         }
     });
@@ -154,7 +154,7 @@ pub async fn proxy_connect(host: &str,
                             // let str = String::from_utf8_lossy(server_data);
                             // eprintln!("read server content:{}", str);
 
-                            if let Err(e) = client_sender.send(server_data.to_vec()).await {
+                            if let Err(_e) = client_sender.send(server_data.to_vec()).await {
                                 break;
                             }
                         }
