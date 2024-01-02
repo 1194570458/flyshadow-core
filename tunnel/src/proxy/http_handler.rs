@@ -148,8 +148,6 @@ pub async fn proxy_http_connect(host: &str,
                 }
             }
 
-            context.remove_proxy_mapping(source_addr.to_string()).await;
-            let _ = context.tunnel_close_server(source_addr.to_string()).await;
             "".to_string()
         }
     };
