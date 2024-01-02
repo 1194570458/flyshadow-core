@@ -1,11 +1,15 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use serde_json::Value;
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
+use crate::context::connect_info::ConnectInfo;
+use crate::context::proxy_type::ProxyType;
+use crate::context::rule_matcher::{AllDomainMatcher, GEOIPMatcher, IPV4DomainMatcher, KeywordDomainMatcher, MatchMatcher, RuleMatcher, SuffixDomainMatcher};
 use crate::tunnel::tunnel::Tunnel;
 use crate::tunnel::tunnel_package::{PackageCmd, PackageProtocol, TunnelPackage};
 
@@ -14,7 +18,10 @@ pub struct TunnelContext {
     tunnel_sender: Sender<TunnelPackage>,
     tunnel_receiver: Option<Receiver<TunnelPackage>>,
     proxy_map: Arc<RwLock<HashMap<String, Sender<TunnelPackage>>>>,
+    proxy_type: ProxyType,
     tunnel_receiver_job: Option<JoinHandle<()>>,
+    domain_rule_matcher: RwLock<Vec<Box<dyn RuleMatcher>>>,
+    connect_infos: RwLock<Vec<ConnectInfo>>,
 }
 
 impl TunnelContext {
@@ -40,6 +47,7 @@ impl TunnelContext {
 }
 
 impl TunnelContext {
+    /// 新建一个Tunnel上下文
     pub fn new() -> TunnelContext {
         // Tunnel往这里写  Context读取这里数据 写到对应Tunnel receiver
         let (tunnel_sender, tunnel_receiver) = channel::<TunnelPackage>(10);
@@ -50,11 +58,103 @@ impl TunnelContext {
             tunnel_sender, // Tunnel往这里写
             tunnel_receiver: Some(tunnel_receiver), // 这里数据转发给Tunnel
             proxy_map: proxy_map.clone(),
+            proxy_type: ProxyType::Proxy,
             tunnel_receiver_job: None,
+            domain_rule_matcher: RwLock::new(vec![]),
+            connect_infos: RwLock::new(vec![]),
         };
         // 开启读取tunnel数据包线程
         context.start_tunnel_receiver_job();
         context
+    }
+
+    /// 创建连接信息
+    pub async fn create_connect_info(&self, source_addr: String, job: JoinHandle<()>) {
+        self.connect_infos.write().await.push(ConnectInfo::create(source_addr, job));
+    }
+
+    /// 删除连接信息
+    pub async fn remove_connect_info(&self, source_addr: &String) {
+        let mut guard = self.connect_infos.write().await;
+        for i in 0..guard.len() {
+            let connect_info = guard.get(i).unwrap();
+            if connect_info.compare(source_addr) {
+                connect_info.close();
+                guard.remove(i);
+                return;
+            }
+        }
+    }
+
+    /// 设置域名匹配规则 json格式的
+    pub async fn set_domain_rule(&self, json: String) {
+        self.domain_rule_matcher.write().await.clear();
+        match serde_json::from_str::<Value>(&json) {
+            Ok(parsed_json) => {
+                if let Some(items) = parsed_json.as_array() {
+                    for item in items {
+                        let matching = if let Some(r) = item.get("matching") {
+                            if let Some(r) = r.as_i64() {
+                                r
+                            } else { continue; }
+                        } else { continue; };
+                        let domain = if let Some(r) = item.get("domain") {
+                            if let Some(r) = r.as_str() {
+                                r
+                            } else { continue; }
+                        } else { continue; };
+                        let proxy_type = if let Some(r) = item.get("proxyType") {
+                            if let Some(r) = r.as_i64() {
+                                r
+                            } else { continue; }
+                        } else { continue; };
+
+                        match matching {
+                            0 => {
+                                self.domain_rule_matcher.write().await.push(Box::new(AllDomainMatcher::new(domain.to_string(), proxy_type as i32)));
+                            }
+                            1 => {
+                                self.domain_rule_matcher.write().await.push(Box::new(SuffixDomainMatcher::new(domain.to_string(), proxy_type as i32)));
+                            }
+                            2 => {
+                                self.domain_rule_matcher.write().await.push(Box::new(KeywordDomainMatcher::new(domain.to_string(), proxy_type as i32)));
+                            }
+                            3 => {
+                                self.domain_rule_matcher.write().await.push(Box::new(IPV4DomainMatcher::new(domain.to_string(), proxy_type as i32)));
+                            }
+                            6 => {
+                                self.domain_rule_matcher.write().await.push(Box::new(GEOIPMatcher::new(domain.to_string(), proxy_type as i32)));
+                            }
+                            10 => {
+                                self.domain_rule_matcher.write().await.push(Box::new(MatchMatcher::new(domain.to_string(), proxy_type as i32)));
+                            }
+                            _ => {}
+                        };
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Domain Rule Json error:{}", e)
+            }
+        }
+        eprintln!("Domain Rule Size:{}", self.domain_rule_matcher.read().await.len());
+    }
+
+    /// 使用匹配器匹配域名
+    pub async fn match_domain(&self, domain: &String) -> ProxyType {
+        return if self.proxy_type == ProxyType::Proxy {
+            for matcher in self.domain_rule_matcher.read().await.iter() {
+                if let Some(proxy_type) = matcher.do_match(domain) {
+                    return proxy_type;
+                }
+            }
+            return ProxyType::Redirect;
+        } else { self.proxy_type.clone() };
+    }
+
+    /// 设置代理规则
+    pub fn set_proxy_type(&mut self, id: i32) {
+        self.proxy_type = ProxyType::from_index(id);
     }
 
     /// 获取隧道的上传流量
@@ -98,7 +198,7 @@ impl TunnelContext {
     /// 关闭隧道连接
     pub async fn close_tunnel(&self) {
         let mut tunnel_guard = self.tunnel.write().await;
-        if let Some(mut tunnel) = tunnel_guard.take(){
+        if let Some(mut tunnel) = tunnel_guard.take() {
             tunnel.disconnect().await;
         }
     }

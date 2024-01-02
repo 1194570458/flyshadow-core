@@ -34,7 +34,7 @@ impl PackageProtocol {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum PackageCmd {
     Login = 0x01,
     NewConnect = 0x03,

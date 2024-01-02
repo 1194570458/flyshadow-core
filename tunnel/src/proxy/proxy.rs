@@ -42,12 +42,16 @@ impl Proxy {
         let job_handler = spawn(async move {
             loop {
                 let context = context.clone();
+                let context2 = context.clone();
                 match tcp_listener.accept().await {
                     Ok((tcp_stream, socket_addr)) => {
-                        spawn(async move {
+                        let socket_addr = format!("{}", socket_addr);
+                        let socket_addr2 = socket_addr.clone();
+                        let join_handler = spawn(async move {
                             // 处理客户端的连接
                             proxy_client::handler_client(tcp_stream, socket_addr, context).await;
                         });
+                        context2.create_connect_info(socket_addr2, join_handler).await;
                     }
                     Err(e) => {
                         eprintln!("accept err {}", e);
