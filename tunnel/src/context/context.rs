@@ -21,7 +21,7 @@ pub struct TunnelContext {
     proxy_type: ProxyType,
     tunnel_receiver_job: Option<JoinHandle<()>>,
     domain_rule_matcher: RwLock<Vec<Box<dyn RuleMatcher>>>,
-    connect_infos: RwLock<Vec<ConnectInfo>>,
+    connect_infos: RwLock<HashMap<String, ConnectInfo>>,
 }
 
 impl TunnelContext {
@@ -61,7 +61,7 @@ impl TunnelContext {
             proxy_type: ProxyType::Proxy,
             tunnel_receiver_job: None,
             domain_rule_matcher: RwLock::new(vec![]),
-            connect_infos: RwLock::new(vec![]),
+            connect_infos: RwLock::new(HashMap::new()),
         };
         // 开启读取tunnel数据包线程
         context.start_tunnel_receiver_job();
@@ -70,19 +70,14 @@ impl TunnelContext {
 
     /// 创建连接信息
     pub async fn create_connect_info(&self, source_addr: String, job: JoinHandle<()>) {
-        self.connect_infos.write().await.push(ConnectInfo::create(source_addr, job));
+        self.connect_infos.write().await.insert(source_addr.clone(), ConnectInfo::create(source_addr, job));
     }
 
     /// 删除连接信息
     pub async fn remove_connect_info(&self, source_addr: &String) {
         let mut guard = self.connect_infos.write().await;
-        for i in 0..guard.len() {
-            let connect_info = guard.get(i).unwrap();
-            if connect_info.compare(source_addr) {
-                connect_info.close();
-                guard.remove(i);
-                return;
-            }
+        if let Some(connect_info) = guard.remove(source_addr) {
+            connect_info.close();
         }
     }
 
