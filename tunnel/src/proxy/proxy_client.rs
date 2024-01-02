@@ -90,6 +90,8 @@ pub async fn handler_client(tcp_stream: TcpStream, socket_addr: String, context:
                             let e = http_handler::handle(vec, sender.clone(), server_receiver, socket_addr.clone(), context).await;
                             eprintln!("proxy client err {}", e);
                             context2.remove_connect_info(&socket_addr).await;
+                            context2.remove_proxy_mapping(socket_addr.to_string()).await;
+                            let _ = context2.tunnel_close_server(socket_addr.to_string()).await;
                         });
                     } else {
                         spawn(async move {
@@ -97,6 +99,8 @@ pub async fn handler_client(tcp_stream: TcpStream, socket_addr: String, context:
                             let e = socks5_handler::handle(vec, sender.clone(), server_receiver, socket_addr.clone(), context).await;
                             eprintln!("proxy client err {}", e);
                             context2.remove_connect_info(&socket_addr).await;
+                            context2.remove_proxy_mapping(socket_addr.to_string()).await;
+                            let _ = context2.tunnel_close_server(socket_addr.to_string()).await;
                         });
                     }
                     status = ConnectStatus::Connected;
