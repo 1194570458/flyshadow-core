@@ -1,2 +1,2 @@
 [workspace]
-members = ["jni", "tunnel"]
+members = ["flyshadow_core_lib", "tunnel"]
