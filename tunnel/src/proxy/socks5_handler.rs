@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::RwLock;
 
 use crate::context::context::TunnelContext;
 use crate::context::proxy_type::ProxyType;
@@ -15,7 +16,8 @@ pub async fn handle(header_data: Vec<u8>,
                     client_sender: Sender<Vec<u8>>,
                     mut client_receiver: Receiver<Vec<u8>>,
                     source_addr: String,
-                    context: Arc<TunnelContext>) -> String {
+                    context: Arc<TunnelContext>,
+                    udp_temp_source_addr: Arc<RwLock<Vec<String>>>) -> String {
     let header_data_len = header_data.len();
     let command = header_data[1];
     let address_type = header_data[3];
@@ -44,7 +46,7 @@ pub async fn handle(header_data: Vec<u8>,
             }
             Ipv6Addr::from(data).to_string()
         }
-        _ => { "".to_string() }
+        _ => { return "resolve domain error".to_string() }
     };
 
     let proxy_type = context.match_domain(&domain).await;
@@ -167,7 +169,7 @@ pub async fn handle(header_data: Vec<u8>,
             Ok(a) => { (a.ip().to_string(), a.port()) }
             Err(e) => { return e.to_string(); }
         };
-        // 响应
+        // // 响应
         let _ = client_sender.send(vec![0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, (udp_port >> 8) as u8, udp_port as u8]).await;
 
         let udp_host = format!("{}:{}", udp_addr, udp_port);
@@ -181,6 +183,9 @@ pub async fn handle(header_data: Vec<u8>,
         // 添加路由映射
         let (sender_to_proxy, mut tunnel_receiver) = channel::<TunnelPackage>(10);
         context.add_proxy_mapping(udp_host.to_string(), sender_to_proxy).await;
+        // 临时UDP映射表
+        udp_temp_source_addr.write().await.push(udp_host.to_string());
+
         // 开线程读隧道数据
         spawn(async move {
             // 读取Tunnel数据
@@ -189,35 +194,25 @@ pub async fn handle(header_data: Vec<u8>,
                     PackageCmd::CloseConnect => { break; }
                     PackageCmd::TData => {
                         if let Some(data) = package.data {
-                            // 取映射中的源地址
-                            let source_addr = match source_target_map.read() {
-                                Ok(map) => {
-                                    // 用目标地址取源地址
-                                    if let Some(addr) = package.target_address {
-                                        if let Some(source_addr) = map.get(&addr) {
-                                            Some(source_addr.to_string())
-                                        } else { None }
-                                    } else {
-                                        None
-                                    }
-                                }
-                                Err(_) => { None }
-                            };
-                            if let Some(source_addr) = source_addr {
-                                // 字符串转对象
-                                if let Ok(socket_addr) = source_addr.as_str().parse::<SocketAddr>() {
-                                    let port = socket_addr.port();
-                                    match socket_addr.ip() {
-                                        IpAddr::V4(ipv4) => {
-                                            // 封装Socks5格式
-                                            let mut vec = vec![0x00, 0x00, 0x00, 0x01];
-                                            vec.extend(ipv4.octets());
-                                            vec.push((port >> 8) as u8);
-                                            vec.push(port as u8);
-                                            vec.extend(data);
-                                            let _ = socket2.send_to(vec.as_slice(), source_addr).await;
+                            // 用目标地址取源地址
+                            if let Some(addr) = package.target_address {
+                                // 取映射中的源地址
+                                if let Some(source_addr) = source_target_map.read().await.get(&addr) {
+                                    // 字符串转对象
+                                    if let Ok(socket_addr) = source_addr.as_str().parse::<SocketAddr>() {
+                                        let port = socket_addr.port();
+                                        match socket_addr.ip() {
+                                            IpAddr::V4(ipv4) => {
+                                                // 封装Socks5格式
+                                                let mut vec = vec![0x00, 0x00, 0x00, 0x01];
+                                                vec.extend(ipv4.octets());
+                                                vec.push((port >> 8) as u8);
+                                                vec.push(port as u8);
+                                                vec.extend(data);
+                                                let _ = socket2.send_to(vec.as_slice(), source_addr).await;
+                                            }
+                                            IpAddr::V6(_) => {}
                                         }
-                                        IpAddr::V6(_) => {}
                                     }
                                 }
                             }
@@ -277,12 +272,7 @@ pub async fn handle(header_data: Vec<u8>,
                     let x = &data[(last_domain_index + 2) as usize..];
                     let target_addr = format!("{}:{}", target_domain, port);
                     // 添加源-目标地址映射
-                    match source_target_map2.write() {
-                        Ok(mut map) => {
-                            map.insert(target_addr.clone(), addr.to_string());
-                        }
-                        Err(_) => {}
-                    }
+                    source_target_map2.write().await.insert(target_addr.clone(), addr.to_string());
                     // 写隧道
                     let _ = context.tunnel_send_data(target_addr, udp_host.to_string(), x.to_vec(), PackageProtocol::UDP).await;
                 }

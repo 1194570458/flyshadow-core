@@ -179,6 +179,7 @@ impl TunnelContext {
         if let Some(mut tunnel) = write_guard.take() {
             tunnel.disconnect().await;
         }
+        self.proxy_map.write().await.clear();
         return match Tunnel::new(host, port, password, self.tunnel_sender.clone()).await {
             Ok(tunnel) => {
                 *write_guard = Some(tunnel);
@@ -204,8 +205,8 @@ impl TunnelContext {
     }
 
     /// 删除代理映射
-    pub async fn remove_proxy_mapping(&self, source_addr: String) {
-        self.proxy_map.write().await.remove(&source_addr);
+    pub async fn remove_proxy_mapping(&self, source_addr: &String) {
+        self.proxy_map.write().await.remove(source_addr);
     }
 
     /// 发送连接服务端命令
