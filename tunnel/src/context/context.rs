@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 use crate::context::connect_info::ConnectInfo;
 use crate::context::proxy_type::ProxyType;
 use crate::context::rule_matcher::{AllDomainMatcher, GEOIPMatcher, IPV4DomainMatcher, KeywordDomainMatcher, MatchMatcher, RuleMatcher, SuffixDomainMatcher};
-use crate::tunnel::tunnel::Tunnel;
+use crate::tunnel::tunnel::{Tunnel, TunnelStatus};
 use crate::tunnel::tunnel_package::{PackageCmd, PackageProtocol, TunnelPackage};
 
 pub struct TunnelContext {
@@ -169,6 +169,29 @@ impl TunnelContext {
             tunnel.get_download().await
         } else {
             0
+        };
+    }
+    /// 获取隧道的Ping延迟
+    pub async fn get_tunnel_ping_delay(&self) -> i32 {
+        let read_guard = self.tunnel.read().await;
+        return if let Some(tunnel) = read_guard.as_ref() {
+            tunnel.get_ping_delay().await as i32
+        } else {
+            0
+        };
+    }
+
+    /// 获取隧道的状态
+    pub async fn get_tunnel_status(&self) -> i32 {
+        let read_guard = self.tunnel.read().await;
+        return if let Some(tunnel) = read_guard.as_ref() {
+            match tunnel.get_status().await {
+                TunnelStatus::Success => {0}
+                TunnelStatus::WaitLogin => {1}
+                TunnelStatus::Logout => {2}
+            }
+        } else {
+            2
         };
     }
 

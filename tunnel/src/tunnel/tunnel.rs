@@ -13,9 +13,9 @@ use tokio::task::JoinHandle;
 
 use crate::tunnel::tunnel_package::{PackageCmd, PackageProtocol, TunnelPackage};
 
-pub enum TunnelLoginStatus {
+#[derive(Copy, Clone)]
+pub enum TunnelStatus {
     Success,
-    Fail,
     WaitLogin,
     Logout,
 }
@@ -25,7 +25,7 @@ pub struct Tunnel {
     password_md5: String,
     upload: Arc<RwLock<i64>>,
     download: Arc<RwLock<i64>>,
-    login_status: Arc<RwLock<TunnelLoginStatus>>,
+    status: Arc<RwLock<TunnelStatus>>,
     ping_time: Arc<RwLock<u128>>,
     ping_delay: Arc<RwLock<u128>>,
     sender: Sender<TunnelPackage>,
@@ -73,7 +73,7 @@ impl Tunnel {
 
         let sender = self.sender.clone();
         let password_md5 = self.password_md5.clone();
-        let login_success = self.login_status.clone();
+        let login_success = self.status.clone();
         let ping_delay = self.ping_delay.clone();
         let ping_time = self.ping_time.clone();
         let download = self.download.clone();
@@ -118,17 +118,17 @@ impl Tunnel {
                                             PackageCmd::LoginSuccess => {
                                                 eprintln!("tunnel login success");
                                                 let mut write_guard = login_success.write().await;
-                                                *write_guard = TunnelLoginStatus::Success;
+                                                *write_guard = TunnelStatus::Success;
                                             }
                                             PackageCmd::LoginFail => {
                                                 eprintln!("tunnel login fail");
                                                 let mut write_guard = login_success.write().await;
-                                                *write_guard = TunnelLoginStatus::Fail;
+                                                *write_guard = TunnelStatus::Logout;
                                             }
                                             PackageCmd::ProtocolError => {
                                                 eprintln!("tunnel protocol error");
                                                 let mut write_guard = login_success.write().await;
-                                                *write_guard = TunnelLoginStatus::Fail;
+                                                *write_guard = TunnelStatus::Logout;
                                             }
                                             PackageCmd::PONG => {
                                                 let ping_time = *ping_time.read().await;
@@ -158,6 +158,8 @@ impl Tunnel {
                     }
                 };
             };
+            let mut write_guard = login_success.write().await;
+            *write_guard = TunnelStatus::Logout;
         });
         self.reader_job = Some(reader_job);
     }
@@ -176,7 +178,7 @@ impl Tunnel {
                     password_md5: format!("{:x}", md5_pwd),
                     upload: Arc::new(RwLock::new(0)),
                     download: Arc::new(RwLock::new(0)),
-                    login_status: Arc::new(RwLock::new(TunnelLoginStatus::WaitLogin)),
+                    status: Arc::new(RwLock::new(TunnelStatus::WaitLogin)),
                     ping_time: Arc::new(RwLock::new(0)),
                     ping_delay: Arc::new(RwLock::new(0)),
                     sender,
@@ -212,17 +214,26 @@ impl Tunnel {
         u
     }
 
+    /// 获取隧道状态
+    pub async fn get_status(&self) -> TunnelStatus {
+        return self.status.read().await.clone();
+    }
+
+    /// 获取Ping延迟
+    pub async fn get_ping_delay(&self) -> u128 {
+        *self.ping_delay.read().await
+    }
 
     /// 断开连接
     pub async fn disconnect(&mut self) {
         // 设置状态
-        let mut write_guard = self.login_status.write().await;
-        *write_guard = TunnelLoginStatus::Logout;
+        let mut write_guard = self.status.write().await;
+        *write_guard = TunnelStatus::Logout;
         // 停止读线程
         if let Some(reader_job) = self.reader_job.take() {
             reader_job.abort();
         }
-        eprintln!("tunnel {}:{} disconnect",self.host,self.port);
+        eprintln!("tunnel {}:{} disconnect", self.host, self.port);
     }
 
     /// 写数据包到Tunnel上
