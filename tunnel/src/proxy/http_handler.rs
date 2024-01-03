@@ -45,7 +45,7 @@ pub async fn proxy_http_connect(host: &str,
             eprintln!("{} Redirect", host);
             match TcpStream::connect(format!("{}:{}", host, port)).await {
                 Ok(server_stream) => {
-                    eprintln!("Connect Target Success: {:}:{:}", host, port);
+                    eprintln!("Connect Target Success: {:}:{:} source_addr: {}", host, port, source_addr);
 
                     let (mut server_reader, mut server_writer) = server_stream.into_split();
                     if let Some(d) = header_data {

@@ -46,7 +46,7 @@ pub async fn handle(header_data: Vec<u8>,
             }
             Ipv6Addr::from(data).to_string()
         }
-        _ => { return "resolve domain error".to_string() }
+        _ => { return "resolve domain error".to_string(); }
     };
 
     let proxy_type = context.match_domain(&domain).await;
@@ -63,7 +63,7 @@ pub async fn handle(header_data: Vec<u8>,
                 eprintln!("{} Redirect", domain);
                 match TcpStream::connect(format!("{}:{}", domain, port)).await {
                     Ok(server_stream) => {
-                        eprintln!("Connect Target Success: {:}:{:}", domain, port);
+                        eprintln!("Connect Target Success: {:}:{:} source_addr: {}", domain, port, source_addr);
 
                         let (mut server_reader, mut server_writer) = server_stream.into_split();
                         spawn(async move {
