@@ -6,6 +6,7 @@ use tokio::spawn;
 
 use tokio::task::JoinHandle;
 use crate::context::context::TunnelContext;
+use crate::tun::tun_handler;
 
 pub struct Tun {
     port: usize,
@@ -14,7 +15,7 @@ pub struct Tun {
 }
 
 impl Tun {
-    pub async fn new(context: Arc<TunnelContext>, port: usize) -> Self {
+    pub fn new(context: Arc<TunnelContext>, port: usize) -> Self {
         Tun {
             port,
             context,
@@ -46,7 +47,7 @@ impl Tun {
                         let socket_addr2 = socket_addr.clone();
                         let join_handler = spawn(async move {
                             // 处理客户端的连接
-
+                            tun_handler::handle(tcp_stream, socket_addr, context).await;
                         });
                         context2.create_connect_info(socket_addr2, join_handler).await;
                     }
