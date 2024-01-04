@@ -49,15 +49,27 @@ pub extern "C" fn set_domain_rule(rt: i64, context_ptr: i64, rule: *const c_char
     forget(rt);
 }
 
+/// 新建代理对象
 #[no_mangle]
-pub extern "C" fn start_proxy(rt: i64, context_ptr: i64, port: u32) -> *mut c_char {
+pub extern "C" fn new_proxy(rt: i64, context_ptr: i64, port: i32) -> i64 {
     let rt = unsafe { Box::from_raw(rt as *mut Runtime) };
     let tc = unsafe { Box::from_raw(context_ptr as *mut Arc<TunnelContext>) };
     let context_clone = Arc::clone(tc.as_ref());
-    //
+
+    let proxy = Proxy::new(context_clone, port as usize);
+
+    forget(tc);
+    forget(rt);
+    Box::into_raw(Box::new(proxy)) as i64
+}
+
+#[no_mangle]
+pub extern "C" fn start_proxy(rt: i64, p: i64) -> *mut c_char {
+    let rt = unsafe { Box::from_raw(rt as *mut Runtime) };
+    let mut p = unsafe { Box::from_raw(p as *mut Proxy) };
+
     let result = rt.block_on(async move {
-        let mut proxy = Proxy::new(context_clone, port as usize);
-        let result = match proxy.start().await {
+        let result = match p.start().await {
             Ok(_) => { "".to_string() }
             Err(e) => {
                 e.to_string()
@@ -65,7 +77,6 @@ pub extern "C" fn start_proxy(rt: i64, context_ptr: i64, port: u32) -> *mut c_ch
         };
         result
     });
-    forget(tc);
     forget(rt);
     return CString::new(result).unwrap().into_raw();
 }
@@ -148,6 +159,7 @@ pub extern "C" fn get_tunnel_ping_delay(rt: i64, context_ptr: i64) -> i32 {
     forget(rt);
     result
 }
+
 #[no_mangle]
 pub extern "C" fn get_tunnel_status(rt: i64, context_ptr: i64) -> i32 {
     let rt = unsafe { Box::from_raw(rt as *mut Runtime) };
