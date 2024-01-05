@@ -71,10 +71,11 @@ impl TcpPipe {
     }
 
     pub fn do_psh(&mut self, data: Vec<u8>) -> Vec<u8> {
+        let data_len = data.len();
         let mut create_packet = Packet::build_tcp_packet(self.identification,
                                                          self.target_addr, self.source_addr,
                                                          self.target_port, self.source_port,
-                                                         None);
+                                                         Some(data));
         create_packet.set_ack();
 
         create_packet.set_sequence_number(self.sequence_number);
@@ -83,7 +84,7 @@ impl TcpPipe {
         create_packet.calculate_checksum();
         create_packet.calculate_ip_checksum();
 
-        self.sequence_number += data.len();
+        self.sequence_number += data_len;
 
         create_packet.to_byte()
     }
