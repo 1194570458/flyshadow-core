@@ -1,5 +1,5 @@
 pub mod tun;
 mod tun_handler;
-mod packet;
+pub mod packet;
 mod tcp_pipe;
-mod tcp_pipe_context;
+pub mod tcp_pipe_context;
