@@ -10,15 +10,13 @@ use tunnel::proxy::proxy::Proxy;
 
 /// 新建代理对象
 #[no_mangle]
-pub extern "C" fn new_proxy(rt: i64, context_ptr: i64, port: i32) -> i64 {
-    let rt = unsafe { Box::from_raw(rt as *mut Runtime) };
+pub extern "C" fn new_proxy(context_ptr: i64, port: i32) -> i64 {
     let tc = unsafe { Box::from_raw(context_ptr as *mut Arc<TunnelContext>) };
     let context_clone = Arc::clone(tc.as_ref());
 
     let proxy = Proxy::new(context_clone, port as usize);
 
     forget(tc);
-    forget(rt);
     Box::into_raw(Box::new(proxy)) as i64
 }
 
@@ -35,6 +33,7 @@ pub extern "C" fn start_proxy(rt: i64, p: i64) -> *mut c_char {
                 e.to_string()
             }
         };
+        forget(p);
         result
     });
     forget(rt);

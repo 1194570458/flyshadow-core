@@ -11,7 +11,9 @@ use tunnel::context::context::TunnelContext;
 pub extern "C" fn connect_tunnel(rt: i64, context_ptr: i64, host: *const c_char, port: u32, password: *const c_char) -> *mut c_char {
     let rt = unsafe { Box::from_raw(rt as *mut Runtime) };
     let tc = unsafe { Box::from_raw(context_ptr as *mut Arc<TunnelContext>) };
+
     let context_clone = Arc::clone(tc.as_ref());
+
     let result = rt.block_on(async move {
         let host = unsafe { CStr::from_ptr(host).to_string_lossy() };
         let password = unsafe { CStr::from_ptr(password).to_string_lossy() };
@@ -31,6 +33,7 @@ pub extern "C" fn connect_tunnel(rt: i64, context_ptr: i64, host: *const c_char,
 pub extern "C" fn close_tunnel(rt: i64, context_ptr: i64) {
     let rt = unsafe { Box::from_raw(rt as *mut Runtime) };
     let tc = unsafe { Box::from_raw(context_ptr as *mut Arc<TunnelContext>) };
+
     let context_clone = Arc::clone(tc.as_ref());
 
     rt.block_on(async move {
@@ -60,6 +63,7 @@ pub extern "C" fn get_tunnel_upload(rt: i64, context_ptr: i64) -> i64 {
 pub extern "C" fn get_tunnel_download(rt: i64, context_ptr: i64) -> i64 {
     let rt = unsafe { Box::from_raw(rt as *mut Runtime) };
     let tc = unsafe { Box::from_raw(context_ptr as *mut Arc<TunnelContext>) };
+
     let context_clone = Arc::clone(tc.as_ref());
 
     let result = rt.block_on(async move {
@@ -75,6 +79,7 @@ pub extern "C" fn get_tunnel_download(rt: i64, context_ptr: i64) -> i64 {
 pub extern "C" fn get_tunnel_ping_delay(rt: i64, context_ptr: i64) -> i32 {
     let rt = unsafe { Box::from_raw(rt as *mut Runtime) };
     let tc = unsafe { Box::from_raw(context_ptr as *mut Arc<TunnelContext>) };
+
     let context_clone = Arc::clone(tc.as_ref());
 
     let result = rt.block_on(async move {
@@ -90,6 +95,7 @@ pub extern "C" fn get_tunnel_ping_delay(rt: i64, context_ptr: i64) -> i32 {
 pub extern "C" fn get_tunnel_status(rt: i64, context_ptr: i64) -> i32 {
     let rt = unsafe { Box::from_raw(rt as *mut Runtime) };
     let tc = unsafe { Box::from_raw(context_ptr as *mut Arc<TunnelContext>) };
+
     let context_clone = Arc::clone(tc.as_ref());
 
     let result = rt.block_on(async move {

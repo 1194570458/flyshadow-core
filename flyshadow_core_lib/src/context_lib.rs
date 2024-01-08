@@ -17,11 +17,13 @@ pub extern "C" fn new_runtime() -> i64 {
 #[no_mangle]
 pub extern "C" fn new_tunnel_context(rt: i64) -> i64 {
     let rt = unsafe { Box::from_raw(rt as *mut Runtime) };
+
     let result = rt.block_on(async {
         let tunnel_context = Arc::new(TunnelContext::new());
         let raw = Box::into_raw(Box::new(tunnel_context));
         raw as i64
     });
+
     forget(rt);
     result
 }
@@ -36,6 +38,7 @@ pub extern "C" fn set_domain_rule(rt: i64, context_ptr: i64, rule: *const c_char
         let rule = unsafe { CStr::from_ptr(rule).to_string_lossy() };
         context_clone.set_domain_rule(rule.to_string()).await;
     });
+
     forget(tc);
     forget(rt);
 }
