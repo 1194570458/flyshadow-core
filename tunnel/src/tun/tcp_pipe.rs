@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 use crate::tun::packet::Packet;
-use crate::tun::tcp_pipe_context::{get_pipe_by_key, remove_pipe_by_key, TcpPipeContext};
+use crate::tun::tcp_pipe_context::{get_pipe_by_key, remove_pipe_by_key};
 use crate::tunnel::tunnel_package::{PackageCmd, TunnelPackage};
 
 pub struct TcpPipe {
@@ -58,14 +59,14 @@ impl TcpPipe {
                     PackageCmd::Login => {}
                     PackageCmd::NewConnect => {}
                     PackageCmd::CloseConnect => {
-                        eprintln!("tunnel send close connect ");
+                        log::error!("tunnel send close connect ");
                         if let Some(source_addr) = d.source_address {
                             if let Some(target_addr) = d.target_address {
                                 if let Some(pipe) = get_pipe_by_key(&pipe_map, &format!("{}-{}", source_addr, target_addr)).await {
                                     let vec = pipe.write().await.do_fin();
                                     let _ = client_sender.send(vec).await;
                                 } else {
-                                    eprintln!("get none pipe:{}", &format!("{}-{}", source_addr, target_addr))
+                                    log::error!("get none pipe:{}", &format!("{}-{}", source_addr, target_addr))
                                 }
                                 remove_pipe_by_key(&pipe_map, &format!("{}-{}", source_addr, target_addr)).await;
                             }
@@ -73,14 +74,17 @@ impl TcpPipe {
                     }
                     PackageCmd::TData => {
                         if let Some(data) = d.data {
-                            eprintln!("read tunnel data:{}", data.len());
+                            log::error!("read tunnel data:{}", data.len());
                             if let Some(source_addr) = d.source_address {
                                 if let Some(target_addr) = d.target_address {
                                     if let Some(pipe) = get_pipe_by_key(&pipe_map, &format!("{}-{}", source_addr, target_addr)).await {
-                                        let vec = pipe.write().await.do_psh(data);
-                                        let _ = client_sender.send(vec).await;
+                                        let mtu = 1000;
+                                        for x in data.chunks(mtu) {
+                                            let vec = pipe.write().await.do_psh(x.to_vec());
+                                            let _ = client_sender.send(vec).await;
+                                        }
                                     } else {
-                                        eprintln!("get none pipe:{}", &format!("{}-{}", source_addr, target_addr))
+                                        log::error!("get none pipe:{}", &format!("{}-{}", source_addr, target_addr))
                                     }
                                 }
                             }

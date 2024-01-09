@@ -12,3 +12,6 @@ crate-type = ["cdylib"]
 [dependencies]
 tunnel = { path = "../tunnel" }
 tokio = { version = "1.35.1", features = ["full"] }
+
+android_logger = "0.13.3"
+log = "0.4.20"

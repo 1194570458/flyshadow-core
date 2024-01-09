@@ -1,11 +1,12 @@
 use std::sync::Arc;
+
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
-
 use tokio::task::JoinHandle;
+
 use crate::context::context::TunnelContext;
-use crate::tun::packet::{Packet, print, Protocol, Version};
+use crate::tun::packet::{Packet, Protocol, Version};
 use crate::tun::tcp_pipe_context::TcpPipeContext;
 use crate::tunnel::tunnel_package::PackageProtocol;
 
@@ -39,8 +40,8 @@ impl Tun {
 
         spawn(async move {
             while let Some(data) = tun_receiver.recv().await {
-                print("write",data.as_slice());
-                eprintln!("tun_receiver.recv()");
+                // print("write",data.as_slice());
+                log::error!("tun_receiver.recv()");
                 let data_len = data.len();
 
                 let mut packet = Packet::from_byte(data);
@@ -50,13 +51,13 @@ impl Tun {
                 }
 
                 if packet.get_version() == Version::IPV4 {
-                    eprintln!("read client data: ");
+                    log::error!("read client data: ");
                     match packet.get_protocol() {
                         Protocol::ICMP => {}
                         Protocol::TCP => {
                             // 握手
                             if packet.is_syn() {
-                                eprintln!("packet syn ,source:{}:{}  target:{}:{}", packet.get_source_addr(), packet.get_source_port(), packet.get_target_addr(), packet.get_target_port());
+                                log::error!("packet syn ,source:{}:{}  target:{}:{}", packet.get_source_addr(), packet.get_source_port(), packet.get_target_addr(), packet.get_target_port());
                                 if let Some(tcp_pipe) = tcp_pipe_context.create_pipe(&packet).await {
                                     // 隧道映射
                                     context.add_proxy_mapping(format!("{}:{}", packet.get_source_addr(), packet.get_source_port()),
@@ -66,20 +67,20 @@ impl Tun {
                                                                           format!("{}:{}", packet.get_source_addr(), packet.get_source_port())).await;
                                     // 响应Syn数据包
                                     let vec = tcp_pipe.write().await.do_ack_syn(&mut packet);
-                                    eprintln!("do ack syn , send to client:  ");
+                                    log::error!("do ack syn , send to client:  ");
                                     // print("ack syn",vec.as_slice());
                                     let _ = sender.send(vec).await;
                                 }
                             }
                             if packet.is_ack() {
-                                eprintln!("packet ack ,source:{}:{}  target:{}:{}", packet.get_source_addr(), packet.get_source_port(), packet.get_target_addr(), packet.get_target_port());
+                                log::error!("packet ack ,source:{}:{}  target:{}:{}", packet.get_source_addr(), packet.get_source_port(), packet.get_target_addr(), packet.get_target_port());
                             }
                             // 处理客户端推送过来的的数据
                             if packet.is_psh() {
-                                eprintln!("packet psh ,source:{}:{}  target:{}:{}", packet.get_source_addr(), packet.get_source_port(), packet.get_target_addr(), packet.get_target_port());
+                                log::error!("packet psh ,source:{}:{}  target:{}:{}", packet.get_source_addr(), packet.get_source_port(), packet.get_target_addr(), packet.get_target_port());
                                 if let Some(tcp_pipe) = tcp_pipe_context.get_pipe(&packet).await {
                                     // 发送数据到隧道
-                                    eprintln!("send data to tunnel size:{}", packet.get_data().len());
+                                    log::error!("send data to tunnel size:{}", packet.get_data().len());
                                     if packet.get_data().len() > 0 {
                                         let _ = context.tunnel_send_data(format!("{}:{}", packet.get_target_addr(), packet.get_target_port()),
                                                                          format!("{}:{}", packet.get_source_addr(), packet.get_source_port()),
@@ -87,16 +88,16 @@ impl Tun {
                                     }
                                     // 响应Psh数据包
                                     let vec = tcp_pipe.write().await.do_ack_psh(&mut packet);
-                                    eprintln!("do ack psh ,send to client: ");
+                                    log::error!("do ack psh ,send to client: ");
                                     // print("ack psh",vec.as_slice());
                                     let _ = sender.send(vec).await;
                                 } else {
-                                    eprintln!("not pipe");
+                                    log::error!("not pipe");
                                 }
                             }
                             // 处理客户端Fin数据包
                             if packet.is_fin() {
-                                eprintln!("packet fin ,source:{}:{}  target:{}:{}", packet.get_source_addr(), packet.get_source_port(), packet.get_target_addr(), packet.get_target_port());
+                                log::error!("packet fin ,source:{}:{}  target:{}:{}", packet.get_source_addr(), packet.get_source_port(), packet.get_target_addr(), packet.get_target_port());
                                 if let Some(tcp_pipe) = tcp_pipe_context.get_pipe(&packet).await {
                                     tcp_pipe_context.remove_pipe(&packet).await;
                                     // 发送数据到隧道
@@ -105,11 +106,11 @@ impl Tun {
                                     }
                                     // 响应Fin数据包
                                     let vec = tcp_pipe.write().await.do_ack_fin(&mut packet);
-                                    eprintln!("do ack fin ,send to client: ");
+                                    log::error!("do ack fin ,send to client: ");
                                     // print("ack fin",vec.as_slice());
                                     let _ = sender.send(vec).await;
                                 } else {
-                                    eprintln!("not pipe");
+                                    log::error!("not pipe");
                                 }
                             }
                         }
@@ -124,7 +125,8 @@ impl Tun {
     /// 获取需要发送Tun网卡的数据
     pub async fn get_tun_data(&self) -> Vec<u8> {
         if let Some(data) = self.client_receiver.write().await.recv().await {
-            print("read data",data.as_slice());
+            // print("read data",data.as_slice());
+            log::error!("write data from tun ,len: {}", data.len());
             data
         } else {
             vec![]

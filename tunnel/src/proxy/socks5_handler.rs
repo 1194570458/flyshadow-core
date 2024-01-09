@@ -60,10 +60,10 @@ pub async fn handle(header_data: Vec<u8>,
 
         match proxy_type {
             ProxyType::Redirect => {
-                eprintln!("{} Redirect", domain);
+                log::error!("{} Redirect", domain);
                 match TcpStream::connect(format!("{}:{}", domain, port)).await {
                     Ok(server_stream) => {
-                        eprintln!("Connect Target Success: {:}:{:} source_addr: {}", domain, port, source_addr);
+                        log::error!("Connect Target Success: {:}:{:} source_addr: {}", domain, port, source_addr);
 
                         let (mut server_reader, mut server_writer) = server_stream.into_split();
                         spawn(async move {
@@ -71,7 +71,7 @@ pub async fn handle(header_data: Vec<u8>,
                             loop {
                                 match server_reader.read(&mut server_buffer).await {
                                     Ok(0) => {
-                                        eprintln!("disconnect server");
+                                        log::error!("disconnect server");
                                         break;
                                     }
                                     Ok(n) => {
@@ -81,7 +81,7 @@ pub async fn handle(header_data: Vec<u8>,
                                         }
                                     }
                                     Err(e) => {
-                                        eprintln!("connect server {}", e);
+                                        log::error!("connect server {}", e);
                                         break;
                                     }
                                 }
@@ -90,13 +90,13 @@ pub async fn handle(header_data: Vec<u8>,
                         while let Some(client_data) = client_receiver.recv().await {
                             let client_data = client_data.as_slice();
                             if let Err(e) = server_writer.write_all(client_data).await {
-                                eprintln!("Write Target {}:{} Error: {:}", domain, port, e);
+                                log::error!("Write Target {}:{} Error: {:}", domain, port, e);
                             }
                         }
                         return "".to_string();
                     }
                     Err(e) => {
-                        eprintln!("Connect Target {}:{} Error: {:}", domain, port, e);
+                        log::error!("Connect Target {}:{} Error: {:}", domain, port, e);
                         return e.to_string();
                     }
                 }
@@ -105,7 +105,7 @@ pub async fn handle(header_data: Vec<u8>,
                 return format!("Reject: {}", domain);
             }
             ProxyType::Proxy => {
-                eprintln!("{} Proxy", domain);
+                log::error!("{} Proxy", domain);
                 let host = domain.to_string();
                 let port = port.to_string();
 
@@ -134,7 +134,7 @@ pub async fn handle(header_data: Vec<u8>,
 
                 // 读取Tunnel数据
                 while let Some(package) = tunnel_receiver.recv().await {
-                    // eprintln!("receiver package {:?}",package);
+                    // log::error!("receiver package {:?}",package);
                     match package.cmd {
                         PackageCmd::CloseConnect => { break; }
                         PackageCmd::TData => {
@@ -148,7 +148,7 @@ pub async fn handle(header_data: Vec<u8>,
                         PackageCmd::ProtocolError => { break; }
                         PackageCmd::PONG => {}
                         PackageCmd::NONE => {
-                            eprintln!("not active tunnel");
+                            log::error!("not active tunnel");
                             return "not tunnel active".to_string();
                         }
                         _ => {}

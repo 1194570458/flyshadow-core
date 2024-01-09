@@ -129,10 +129,10 @@ impl TunnelContext {
                 }
             }
             Err(e) => {
-                eprintln!("Domain Rule Json error:{}", e)
+                log::error!("Domain Rule Json error:{}", e)
             }
         }
-        eprintln!("Domain Rule Size:{}", self.domain_rule_matcher.read().await.len());
+        log::error!("Domain Rule Size:{}", self.domain_rule_matcher.read().await.len());
     }
 
     /// 使用匹配器匹配域名
@@ -234,7 +234,7 @@ impl TunnelContext {
 
     /// 发送连接服务端命令
     pub async fn tunnel_connect_server(&self, target_addr: String, source_addr: String) -> Result<(), String> {
-        eprintln!("connect to: {}", target_addr);
+        log::error!("connect to: {}", target_addr);
         if self.tunnel.read().await.is_none() {
             return Err("Tunnel is none".to_string());
         }
@@ -289,7 +289,7 @@ impl TunnelContext {
 
     /// 发送关闭服务端连接命令
     pub async fn tunnel_close_server(&self, source_addr: String) -> Result<(), String> {
-        eprintln!("dis connect ,source addr: {}", source_addr);
+        log::error!("dis connect ,source addr: {}", source_addr);
         if self.tunnel.read().await.is_none() {
             return Err("Tunnel is none".to_string());
         }

@@ -41,7 +41,7 @@ impl Tunnel {
     async fn connect(host: String, port: u16) -> Result<(OwnedReadHalf, OwnedWriteHalf), Error> {
         match TcpStream::connect((host, port)).await {
             Ok(tcp_stream) => {
-                eprintln!("tunnel connect success");
+                log::error!("tunnel connect success");
                 Ok(tcp_stream.into_split())
             }
             Err(e) => { Err(e) }
@@ -96,7 +96,7 @@ impl Tunnel {
                                 Ok(tunnel_opt) => {
                                     // 转成结构体
                                     if let Some(tunnel_package) = tunnel_opt {
-                                        // eprintln!("tunnel read package: {:?}", tunnel_package);
+                                        // log::error!("tunnel read package: {:?}", tunnel_package);
                                         match tunnel_package.cmd {
                                             PackageCmd::Login => {}
                                             PackageCmd::NewConnect => {}
@@ -107,7 +107,7 @@ impl Tunnel {
                                             }
                                             PackageCmd::TData => {
                                                 // if let Some(d) = tunnel_package.data.take() {
-                                                //     eprintln!("{}", String::from_utf8_lossy(d.clone().as_slice()));
+                                                //     log::error!("{}", String::from_utf8_lossy(d.clone().as_slice()));
                                                 //     tunnel_package.data = Some(d);
                                                 // }
                                                 if let Err(_) = sender.send(tunnel_package).await {
@@ -116,17 +116,17 @@ impl Tunnel {
                                             }
                                             PackageCmd::PING => {}
                                             PackageCmd::LoginSuccess => {
-                                                eprintln!("tunnel login success");
+                                                log::error!("tunnel login success");
                                                 let mut write_guard = login_success.write().await;
                                                 *write_guard = TunnelStatus::Success;
                                             }
                                             PackageCmd::LoginFail => {
-                                                eprintln!("tunnel login fail");
+                                                log::error!("tunnel login fail");
                                                 let mut write_guard = login_success.write().await;
                                                 *write_guard = TunnelStatus::Logout;
                                             }
                                             PackageCmd::ProtocolError => {
-                                                eprintln!("tunnel protocol error");
+                                                log::error!("tunnel protocol error");
                                                 let mut write_guard = login_success.write().await;
                                                 *write_guard = TunnelStatus::Logout;
                                             }
@@ -136,7 +136,7 @@ impl Tunnel {
                                                     .duration_since(UNIX_EPOCH)
                                                     .unwrap()
                                                     .as_millis() - ping_time;
-                                                eprintln!("tunnel delay {}ms", delay);
+                                                log::error!("tunnel delay {}ms", delay);
                                                 *ping_delay.write().await = delay;
                                             }
                                             PackageCmd::NONE => {}
@@ -146,14 +146,14 @@ impl Tunnel {
                                     }
                                 }
                                 Err(e) => {
-                                    eprintln!("{}", e);
+                                    log::error!("{}", e);
                                     break 'read_package;
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("tunnel read err {}", e);
+                        log::error!("tunnel read err {}", e);
                         break;
                     }
                 };
@@ -233,12 +233,12 @@ impl Tunnel {
         if let Some(reader_job) = self.reader_job.take() {
             reader_job.abort();
         }
-        eprintln!("tunnel {}:{} disconnect", self.host, self.port);
+        log::error!("tunnel {}:{} disconnect", self.host, self.port);
     }
 
     /// 写数据包到Tunnel上
     pub async fn write_to_tunnel(&mut self, mut tunnel_package: TunnelPackage) -> Result<(), String> {
-        // eprintln!("tunnel write to tunnel:{:?}", tunnel_package);
+        // log::error!("tunnel write to tunnel:{:?}", tunnel_package);
         let pwd = self.password_md5.as_bytes();
         // 转成数组
         let mut vec1 = Vec::new();
@@ -260,7 +260,7 @@ impl Tunnel {
         final_result.insert(0, 0x0f);
         let x1 = final_result.as_slice();
 
-        // eprintln!("write data:{:02x?}", x1);
+        // log::error!("write data:{:02x?}", x1);
         match self.tcp_writer.write_all(x1).await {
             Ok(_) => {
                 let _ = self.tcp_writer.flush().await;
@@ -269,7 +269,7 @@ impl Tunnel {
                 Ok(())
             }
             Err(e) => {
-                eprintln!("tunnel write err {}", e);
+                log::error!("tunnel write err {}", e);
                 Err(e.to_string())
             }
         }

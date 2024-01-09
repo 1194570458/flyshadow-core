@@ -9,6 +9,10 @@ use tunnel::context::context::TunnelContext;
 
 #[no_mangle]
 pub extern "C" fn new_runtime() -> i64 {
+    // android_logger::init_once(
+    //     Config::default().with_max_level(LevelFilter::Debug),
+    // );
+
     let runtime = Builder::new_multi_thread().enable_all()
         .build().unwrap();
     Box::into_raw(Box::new(runtime)) as i64

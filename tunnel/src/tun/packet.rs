@@ -1,8 +1,6 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::Ipv4Addr;
-use std::path::Prefix;
-
 
 #[derive(Debug, PartialEq)]
 pub enum Protocol {
@@ -460,7 +458,7 @@ async fn main() {
     // if packet.is_syn() {
     //     if let Some(tcp_pipe) = tcp_pipe_context.create_pipe(&packet).await {
     //         let vec = tcp_pipe.read().await.do_ack_syn(&mut packet);
-    //         eprintln!("do syn,data:{:?}", packet.get_data());
+    //         log::error!("do syn,data:{:?}", packet.get_data());
     //         print(vec.as_slice());
     //     }
     // }
@@ -473,7 +471,7 @@ async fn main() {
     // if packet.is_psh() {
     //     if let Some(mut pipe) = tcp_pipe_context.get_pipe(&packet).await {
     //         let vec = pipe.write().await.do_ack_psh(&mut packet);
-    //         eprintln!("do ack psh");
+    //         log::error!("do ack psh");
     //         print(vec.as_slice());
     //     }
     // }
@@ -483,7 +481,7 @@ async fn main() {
     //     // 解析十六进制字符串为字节数组
     //     let bytes = hex::decode(hex_string).expect("Failed to decode hex string");
     //     let vec = pipe.write().await.do_psh(bytes);
-    //     eprintln!("do psh");
+    //     log::error!("do psh");
     //     print(vec.as_slice());
     // }
 }

@@ -1,4 +1,3 @@
-use std::io::Error;
 use std::string::ToString;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,14 +21,14 @@ async fn main() {
     match proxy.start().await {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("start proxy error: {}", e);
+            log::error!("start proxy error: {}", e);
         }
     };
 
     match tunnel_context.connect_tunnel("47.242.6.116".to_string(), 6001, "855ddy1sg2nczhxh4vgl".to_string()).await {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("{}", e);
+            log::error!("{}", e);
         }
     };
 
@@ -39,7 +38,7 @@ async fn main() {
     spawn(async move{
         loop {
             let x1 = t2.get_tun_data().await;
-            eprintln!("receive data:{:02x?}",x1);
+            log::error!("receive data:{:02x?}",x1);
         }
     });
 

@@ -32,7 +32,7 @@ pub extern "C" fn send_to_tun(rt: i64, t: i64, input: *const u8, input_size: usi
     let data = input_slice.to_vec();
 
     rt.block_on(async move {
-        eprintln!("tun receiver data: {:02x?}", data);
+        log::error!("read data from tun ,len: {}", data.len());
         t.handler_tun_data(data).await;
 
         forget(t);

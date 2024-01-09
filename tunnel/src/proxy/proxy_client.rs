@@ -38,7 +38,7 @@ fn create_client_writer(mut writer: OwnedWriteHalf) -> Sender<Vec<u8>> {
 
 /// 处理客户端的连接
 pub async fn handler_client(tcp_stream: TcpStream, socket_addr: String, context: Arc<TunnelContext>) {
-    // eprintln!("handler client:{}", socket_addr);
+    // log::error!("handler client:{}", socket_addr);
     let mut status = ConnectStatus::Init;
     let (mut client_reader, client_writer) = tcp_stream.into_split();
     // 创建客户端写线程
@@ -61,7 +61,7 @@ pub async fn handler_client(tcp_stream: TcpStream, socket_addr: String, context:
 
                 if status == ConnectStatus::Init {
                     if n < 3 {
-                        eprintln!("error data len:{}", n);
+                        log::error!("error data len:{}", n);
                         break;
                     }
                     // socks5 字节头
@@ -75,7 +75,7 @@ pub async fn handler_client(tcp_stream: TcpStream, socket_addr: String, context:
                         } else {
                             // 发送错误
                             let _ = client_sender.send([0x05, 0xff].to_vec()).await;
-                            eprintln!("socks need auth");
+                            log::error!("socks need auth");
                             break;
                         }
                     } else {
@@ -94,7 +94,7 @@ pub async fn handler_client(tcp_stream: TcpStream, socket_addr: String, context:
                         let handler = spawn(async move {
                             // 连接服务端 返回服务端的发送者
                             let e = http_handler::handle(vec, sender.clone(), server_receiver, socket_addr.clone(), context).await;
-                            eprintln!("http handler back {}", e);
+                            log::error!("http handler back {}", e);
                             // 回收资源
                             context2.remove_proxy_mapping(&socket_addr).await;
                             let _ = context2.tunnel_close_server(socket_addr.to_string()).await;
@@ -107,7 +107,7 @@ pub async fn handler_client(tcp_stream: TcpStream, socket_addr: String, context:
                         let handler = spawn(async move {
                             // 连接服务端 返回服务端的发送者
                             let e = socks5_handler::handle(vec, sender.clone(), server_receiver, socket_addr.clone(), context, udp_temp_source_addr2).await;
-                            eprintln!("socks5 handler back {}", e);
+                            log::error!("socks5 handler back {}", e);
                             // 回收资源
                             context2.remove_proxy_mapping(&socket_addr).await;
                             let _ = context2.tunnel_close_server(socket_addr.to_string()).await;
@@ -131,7 +131,7 @@ pub async fn handler_client(tcp_stream: TcpStream, socket_addr: String, context:
                 }
             }
             Err(e) => {
-                eprintln!("read {} Error: {:}", socket_addr, e);
+                log::error!("read {} Error: {:}", socket_addr, e);
                 break;
             }
         }
@@ -147,5 +147,5 @@ pub async fn handler_client(tcp_stream: TcpStream, socket_addr: String, context:
     if let Some(handler) = client_write_join_handler {
         handler.abort();
     };
-    // eprintln!("proxy client loop end ");
+    // log::error!("proxy client loop end ");
 }

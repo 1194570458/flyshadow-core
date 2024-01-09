@@ -29,7 +29,7 @@ impl Proxy {
         let context = self.context.clone();
         match TcpListener::bind(("0.0.0.0", self.port as u16)).await {
             Ok(lis) => {
-                eprintln!("Proxy start on {:}", self.port);
+                log::error!("Proxy start on {:}", self.port);
                 self.start_accept_client(lis, context);
                 Ok(())
             }
@@ -54,7 +54,7 @@ impl Proxy {
                         context2.create_connect_info(socket_addr2, join_handler).await;
                     }
                     Err(e) => {
-                        eprintln!("accept err {}", e);
+                        log::error!("accept err {}", e);
                     }
                 }
             }
@@ -66,7 +66,7 @@ impl Proxy {
     pub fn stop(&mut self) {
         if let Some(job_handler) = self.tcp_listener_join_handler.take() {
             job_handler.abort();
-            eprintln!("stop listener");
+            log::error!("stop listener");
         }
     }
 }
